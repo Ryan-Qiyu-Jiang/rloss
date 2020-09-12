@@ -5,7 +5,7 @@ class Path(object):
             # folder that contains pascal/. It should have three subdirectories 
             # called "JPEGImages", "SegmentationClassAug", and "pascal_2012_scribble" 
             # containing RGB images, groundtruth, and scribbles respectively.
-            return '/path/to/datasets/VOCdevkit/VOC2012/'  
+            return '/content/stereo_segmentation/rloss/data/VOC2012/VOCdevkit/VOC2012/ImageSets/Segmentation/'  
         elif dataset == 'sbd':
             return '/path/to/datasets/benchmark_RELEASE/'  # folder that contains dataset/.
         elif dataset == 'cityscapes':
