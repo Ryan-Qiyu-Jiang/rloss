@@ -28,11 +28,11 @@ class VOCSegmentation(Dataset):
         self._image_dir = os.path.join(self._base_dir, 'JPEGImages')
         if split == 'train':
             # full supervision
-            #self._cat_dir = os.path.join(self._base_dir, 'SegmentationClass')
+            #self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
             # weak supervision with scribbles
             self._cat_dir = os.path.join(self._base_dir, 'pascal_2012_scribble')
         elif split == 'val':
-            self._cat_dir = os.path.join(self._base_dir, 'SegmentationClass')
+            self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
         #self._cat_dir = os.path.join(self._base_dir, 'pascal_2012_scribble_val_full')
 
         if isinstance(split, str):
@@ -44,7 +44,7 @@ class VOCSegmentation(Dataset):
         self.args = args
 
         #_splits_dir = os.path.join(self._base_dir, 'ImageSets', 'Segmentation')
-        _splits_dir = os.path.join(self._base_dir, 'ImageSets', 'Segmentation')
+        _splits_dir = os.path.join(self._base_dir, 'ImageSets', 'SegmentationAug')
 
         self.im_ids = []
         self.images = []
@@ -149,5 +149,3 @@ if __name__ == '__main__':
             break
 
     plt.show(block=True)
-
-
