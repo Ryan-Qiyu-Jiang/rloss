@@ -51,6 +51,7 @@ class SegTrainer(pl.LightningModule):
         self.lr = args.lr
         self.nclass = nclass
         self.num_img_tr = num_img_tr
+        self.best_pred = 0.0
 
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
@@ -94,7 +95,7 @@ class SegTrainer(pl.LightningModule):
                                                 nesterov=self.args.nesterov)
         self.scheduler = LR_Scheduler(self.args.lr_scheduler, self.args.lr,
                                             self.args.epochs, self.num_img_tr)(self.optimizer, 'min')
-        return [self.optimizer], [self.scheduler]
+        return self.optimizer #[self.optimizer], [self.scheduler]
 
     def get_loss(self, batch, batch_idx):
         i = batch_idx
@@ -106,7 +107,7 @@ class SegTrainer(pl.LightningModule):
         target[target==254]=255
 
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
-        # self.optimizer.zero_grad()
+        self.optimizer.zero_grad()
         output = self.model(image)
         
         celoss = self.criterion(output, target)
