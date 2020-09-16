@@ -94,7 +94,7 @@ class SegTrainer(pl.LightningModule):
                                                 weight_decay=self.args.weight_decay, 
                                                 nesterov=self.args.nesterov)
         self.scheduler = LR_Scheduler(self.args.lr_scheduler, self.args.lr,
-                                            self.args.epochs, self.num_img_tr)(self.optimizer, 'min')
+                                            self.args.epochs, self.num_img_tr)
         return self.optimizer #[self.optimizer], [self.scheduler]
 
     def get_loss(self, batch, batch_idx):
