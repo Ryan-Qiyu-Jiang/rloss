@@ -115,6 +115,7 @@ class SegTrainer(pl.LightningModule):
         if self.args.densecrfloss ==0:
             loss = celoss
         else:
+            self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             max_output = (max(torch.abs(torch.max(output)), 
                                 torch.abs(torch.min(output))))
             mean_output = torch.mean(torch.abs(output)).item()
@@ -180,30 +181,16 @@ class SegTrainer(pl.LightningModule):
             global_step = i + num_img_tr * epoch
             self.summary.visualize_image(self.writer, self.args.dataset, image, target, output, global_step)
 
-        if training and self.args.save_interval:
-            # save checkpoint every interval epoch
-            is_best = False
-            if (epoch + 1) % self.args.save_interval == 0:
-                self.saver.save_checkpoint({
-                    'epoch': epoch + 1,
-                    'state_dict': self.model.state_dict(),
-                    'optimizer': self.optimizer.state_dict(),
-                    'best_pred': self.best_pred,
-                }, is_best, filename='checkpoint_epoch_{}.pth.tar'.format(str(epoch+1)))
-
         return loss
         
     def training_step(self, batch, batch_idx):
-        loss = self.get_loss(batch, batch_idx)
-        return loss
+        return self.get_loss(batch, batch_idx)
     
     def validation_step(self, batch, batch_idx):
-        loss = self.get_loss(batch, batch_idx, training=False)
-        return loss
+        return self.get_loss(batch, batch_idx, training=False)
     
     def test_step(self, batch, batch_idx):
-        loss = self.get_loss(batch, batch_idx, training=False)
-        return loss
+        return self.get_loss(batch, batch_idx, training=False)
 
 def get_args():
     return {'backbone': 'mobilenet',
