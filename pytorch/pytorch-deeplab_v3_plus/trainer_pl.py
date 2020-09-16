@@ -180,13 +180,13 @@ class SegTrainer(pl.LightningModule):
             global_step = i + num_img_tr * epoch
             self.summary.visualize_image(self.writer, self.args.dataset, image, target, output, global_step)
 
-        if self.args.save_interval:
+        if training and self.args.save_interval:
             # save checkpoint every interval epoch
             is_best = False
             if (epoch + 1) % self.args.save_interval == 0:
                 self.saver.save_checkpoint({
                     'epoch': epoch + 1,
-                    'state_dict': self.model.module.state_dict(),
+                    'state_dict': self.model.state_dict(),
                     'optimizer': self.optimizer.state_dict(),
                     'best_pred': self.best_pred,
                 }, is_best, filename='checkpoint_epoch_{}.pth.tar'.format(str(epoch+1)))
