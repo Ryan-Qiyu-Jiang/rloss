@@ -78,8 +78,7 @@ class SegTrainer(pl.LightningModule):
             print(self.densecrflosslayer)
         
         self.evaluator = Evaluator(self.nclass)
-        self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr,
-                                            args.epochs, len(self.train_loader))
+
         # Clear start epoch if fine-tuning
         if args.ft:
             args.start_epoch = 0
@@ -93,7 +92,9 @@ class SegTrainer(pl.LightningModule):
         self.optimizer = torch.optim.SGD(train_params, momentum=self.args.momentum, 
                                                 weight_decay=self.args.weight_decay, 
                                                 nesterov=self.args.nesterov)
-        return self.optimizer
+        self.scheduler = LR_Scheduler(self.args.lr_scheduler, self.args.lr,
+                                            self.args.epochs, self.num_img_tr)
+        return [self.optimizer], [self.scheduler]
 
     def get_loss(self, batch, batch_idx):
         i = batch_idx
