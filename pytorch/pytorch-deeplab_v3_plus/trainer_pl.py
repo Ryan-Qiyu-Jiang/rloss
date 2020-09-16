@@ -200,7 +200,7 @@ def get_args():
             'crop_size': 513,
             'dataset': 'pascal',
             'densecrfloss': 2e-09,
-            'epochs': 3,
+            'epochs': 60,
             'eval_interval': 1,
             'freeze_bn': False,
             'ft': False,
