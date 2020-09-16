@@ -97,7 +97,7 @@ class SegTrainer(pl.LightningModule):
                                             self.args.epochs, self.num_img_tr)
         return self.optimizer #[self.optimizer], [self.scheduler]
 
-    def get_loss(self, batch, batch_idx):
+    def get_loss(self, batch, batch_idx, training=True):
         i = batch_idx
         epoch = self.current_epoch
         sample = batch
@@ -148,11 +148,12 @@ class SegTrainer(pl.LightningModule):
                     grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                     self.writer.add_image(plot_name, grid_image, global_step)
 
-            output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
-            probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
-            
-            logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
-            densecrfloss_copy.backward()
+            if training:
+                output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+                probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+                
+                logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
+                densecrfloss_copy.backward()
 
             if i % (num_img_tr // 10) == 0:
                 global_step = i + num_img_tr * epoch
@@ -197,11 +198,11 @@ class SegTrainer(pl.LightningModule):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        loss = self.get_loss(batch, batch_idx)
+        loss = self.get_loss(batch, batch_idx, training=False)
         return loss
     
     def test_step(self, batch, batch_idx):
-        loss = self.get_loss(batch, batch_idx)
+        loss = self.get_loss(batch, batch_idx, training=False)
         return loss
 
 def get_args():
