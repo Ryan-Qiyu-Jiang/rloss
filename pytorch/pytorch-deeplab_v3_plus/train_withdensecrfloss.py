@@ -17,6 +17,43 @@ from utils.metrics import Evaluator
 
 from DenseCRFLoss import DenseCRFLoss
 
+import matplotlib
+import matplotlib.cm
+from torchvision.utils import make_grid
+
+def colorize(value, vmin=None, vmax=None, cmap=None):
+    """
+    A utility function for Torch/Numpy that maps a grayscale image to a matplotlib
+    colormap for use with TensorBoard image summaries.
+    By default it will normalize the input value to the range 0..1 before mapping
+    to a grayscale colormap.
+    Arguments:
+      - value: 2D Tensor of shape [height, width] or 3D Tensor of shape
+        [height, width, 1].
+      - vmin: the minimum value of the range used for normalization.
+        (Default: value minimum)
+      - vmax: the maximum value of the range used for normalization.
+        (Default: value maximum)
+      - cmap: a valid cmap named for use with matplotlib's `get_cmap`.
+        (Default: Matplotlib default colormap)
+    
+    Returns a 4D uint8 tensor of shape [height, width, 4].
+    """
+    # normalize
+    vmin = value.min() if vmin is None else vmin
+    vmax = value.max() if vmax is None else vmax
+    if vmin!=vmax:
+        value = (value - vmin) / (vmax - vmin) # vmin..vmax
+    else:
+        # Avoid 0-division
+        value = value*0.
+    # squeeze last dim if it exists
+    value = value.squeeze()
+
+    cmapper = matplotlib.cm.get_cmap(cmap)
+    value = cmapper(value,bytes=True) # (nxmx4)
+    return value
+
 class Trainer(object):
     def __init__(self, args):
         self.args = args
@@ -122,13 +159,66 @@ class Trainer(object):
             if self.args.densecrfloss ==0:
                 loss = celoss
             else:
-                probs = softmax(output)
+                max_output = (max(torch.abs(torch.max(output)), 
+                                  torch.abs(torch.min(output))))
+                mean_output = torch.mean(torch.abs(output)).item()
+                # std_output = torch.std(output).item()
+                probs = softmax(output) # /max_output*4
                 denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
                 densecrfloss = self.densecrflosslayer(denormalized_image,probs,croppings)
                 if self.args.cuda:
                     densecrfloss = densecrfloss.cuda()
                 loss = celoss + densecrfloss
                 train_crfloss += densecrfloss.item()
+
+                logits_copy = output.detach().clone().requires_grad_(True)
+                max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
+                                  torch.abs(torch.min(logits_copy))))
+                probs_copy = softmax(logits_copy) # /max_output_copy*4
+                denormalized_image_copy = denormalized_image.detach().clone()
+                croppings_copy = croppings.detach().clone()
+                densecrfloss_copy = self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings)
+
+                @torch.no_grad()
+                def add_grad_map(grad, plot_name):
+                  if i % (num_img_tr // 10) == 0:
+                    global_step = i + num_img_tr * epoch
+                    batch_grads = torch.max(torch.abs(grad), dim=1)[0].detach().cpu().numpy()
+                    color_imgs = []
+                    for grad_img in batch_grads:
+                        grad_img[0,0]=0
+                        img = colorize(grad_img)[:,:,:3]
+                        color_imgs.append(img)
+                    color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+                    grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                    self.writer.add_image(plot_name, grid_image, global_step)
+
+                output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+                probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+                
+                logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
+                densecrfloss_copy.backward()
+
+                if i % (num_img_tr // 10) == 0:
+                  global_step = i + num_img_tr * epoch
+                  img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
+                  color_imgs = []
+                  for e in img_entropy:
+                      e[0,0] = 0
+                      img = colorize(e)[:,:,:3]
+                      color_imgs.append(img)
+                  color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+                  grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                  self.writer.add_image('Entropy', grid_image, global_step)
+
+                  self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
+                  self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
+
+                self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
+                self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
+                self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
+
+
             loss.backward()
         
             self.optimizer.step()
@@ -138,6 +228,7 @@ class Trainer(object):
             tbar.set_description('Train loss: %.3f = CE loss %.3f + CRF loss: %.3f' 
                              % (train_loss / (i + 1),train_celoss / (i + 1),train_crfloss / (i + 1)))
             self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
 
             # Show 10 * 3 inference results each epoch
             if i % (num_img_tr // 10) == 0:
@@ -297,6 +388,20 @@ def main():
 
     args = parser.parse_args()
     
+    args.backbone = 'mobilenet'
+    args.lr = 0.007
+    args.workers = 6
+    args.epochs = 3
+    args.batch_size = 12
+    # args.checkname = 'deeplab-mobilenet-2'
+    args.eval_interval = 1
+    args.dataset = 'pascal'
+    args.save_interval = 1
+    args.densecrfloss = 2e-9
+    args.rloss_scale = 0.5
+    args.sigma_rgb = 15
+    args.sigma_xy = 100
+
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
