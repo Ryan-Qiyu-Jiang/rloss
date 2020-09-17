@@ -41,9 +41,46 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
     value = cmapper(value,bytes=True) # (nxmx4)
     return value
 
+def get_args():
+    return {'backbone': 'mobilenet',
+            'base_size': 513,
+            'batch_size': 12,
+            'checkname': 'args.checkname',
+            'crop_size': 513,
+            'dataset': 'pascal',
+            'densecrfloss': 2e-09,
+            'epochs': 60,
+            'eval_interval': 1,
+            'freeze_bn': False,
+            'ft': False,
+            'gpu_ids': '0',
+            'loss_type': 'ce',
+            'lr': 0.007,
+            'lr_scheduler': 'poly',
+            'momentum': 0.9,
+            'nesterov': False,
+            'no_cuda': False,
+            'no_val': False,
+            'out_stride': 16,
+            'resume': None,
+            'rloss_scale': 0.5,
+            'save_interval': 1,
+            'seed': 1,
+            'sigma_rgb': 15,
+            'sigma_xy': 100,
+            'start_epoch': 0,
+            'sync_bn': None,
+            'test_batch_size': None,
+            'use_balanced_weights': False,
+            'use_sbd': False,
+            'weight_decay': 0.0005,
+            'workers': 6}
+
 class SegTrainer(pl.LightningModule):
     def __init__(self, hparams, nclass=21, num_img_tr=800):
         super().__init__()
+        if not hparams:
+            hparams = Namespace(**get_args())
         if type(hparams) is dict:
           hparams = Namespace(**hparams)
         self.hparams = hparams
@@ -197,38 +234,3 @@ class SegTrainer(pl.LightningModule):
     
     def test_step(self, batch, batch_idx):
         return self.get_loss(batch, batch_idx, training=False)
-
-def get_args():
-    return {'backbone': 'mobilenet',
-            'base_size': 513,
-            'batch_size': 12,
-            'checkname': 'args.checkname',
-            'crop_size': 513,
-            'dataset': 'pascal',
-            'densecrfloss': 2e-09,
-            'epochs': 60,
-            'eval_interval': 1,
-            'freeze_bn': False,
-            'ft': False,
-            'gpu_ids': '0',
-            'loss_type': 'ce',
-            'lr': 0.007,
-            'lr_scheduler': 'poly',
-            'momentum': 0.9,
-            'nesterov': False,
-            'no_cuda': False,
-            'no_val': False,
-            'out_stride': 16,
-            'resume': None,
-            'rloss_scale': 0.5,
-            'save_interval': 1,
-            'seed': 1,
-            'sigma_rgb': 15,
-            'sigma_xy': 100,
-            'start_epoch': 0,
-            'sync_bn': None,
-            'test_batch_size': None,
-            'use_balanced_weights': False,
-            'use_sbd': False,
-            'weight_decay': 0.0005,
-            'workers': 6}
