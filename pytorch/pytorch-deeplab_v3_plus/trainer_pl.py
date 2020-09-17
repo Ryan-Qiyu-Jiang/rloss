@@ -47,6 +47,7 @@ def get_args():
             'batch_size': 12,
             'checkname': 'args.checkname',
             'crop_size': 513,
+            'cuda': True,
             'dataset': 'pascal',
             'densecrfloss': 2e-09,
             'epochs': 60,
