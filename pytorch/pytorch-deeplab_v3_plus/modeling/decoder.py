@@ -55,7 +55,7 @@ class Decoder(nn.Module):
 
 class MultiScaleDecoder(nn.Module):
     def __init__(self, num_classes, backbone, BatchNorm, scales):
-        super(Decoder, self).__init__()
+        super().__init__()
         if backbone == 'resnet' or backbone == 'drn':
             low_level_inplanes = 256
         elif backbone == 'xception':
