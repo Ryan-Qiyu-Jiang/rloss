@@ -69,7 +69,7 @@ class DeepLab_Multiscale(DeepLab):
         else:
             BatchNorm = nn.BatchNorm2d
         self.scales = scales
-        self.decoder = build_decoder(num_classes, backbone, BatchNorm, multiscale=True, scales=sales)
+        self.decoder = build_decoder(num_classes, backbone, BatchNorm, multiscale=True, scales=scales)
 
     def multi_forward(self, input):
         x, low_level_feat = self.backbone(input)
