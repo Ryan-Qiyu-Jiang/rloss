@@ -81,9 +81,11 @@ class SegTrainer(pl.LightningModule):
     def __init__(self, hparams, nclass=21, num_img_tr=800):
         super().__init__()
         if not hparams:
+            print('Loading default hyperparams!')
             hparams = Namespace(**get_args())
         if type(hparams) is dict:
-          hparams = Namespace(**hparams)
+            print('Converting hparam dict to namespace!')
+            hparams = Namespace(**hparams)
         self.hparams = hparams
         self.update_loggers()
         self.lr = hparams.lr
@@ -141,7 +143,37 @@ class SegTrainer(pl.LightningModule):
                                             self.hparams.epochs, self.num_img_tr)
         return self.optimizer #[self.optimizer], [self.scheduler]
 
-    def get_loss(self, batch, batch_idx, training=True):
+    def get_loss_val(self, batch, batch_idx):
+        i = batch_idx
+        epoch = self.current_epoch
+        sample = batch
+        num_img_tr = self.num_img_tr
+        image, target = sample['image'], sample['label']
+        croppings = (target!=254).float()
+        target[target==254]=255
+
+        self.scheduler(self.optimizer, i, epoch, self.best_pred)
+        self.optimizer.zero_grad()
+        output = self.model(image)
+        celoss = self.criterion(output, target)
+        
+        if self.hparams.densecrfloss ==0:
+            loss = celoss
+        else:
+            self.densecrflosslayer = self.densecrflosslayer.to('cpu')
+            max_output = (max(torch.abs(torch.max(output)), 
+                                torch.abs(torch.min(output))))
+            probs = nn.Softmax(dim=1)(output) # /max_output*4
+            denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+            densecrfloss = self.rloss_weight*self.densecrflosslayer(denormalized_image,probs,croppings)
+            if self.hparams.cuda:
+                densecrfloss = densecrfloss.cuda()
+            loss = celoss + densecrfloss
+
+        self.writer.add_scalar('val/total_loss_iter', loss.item(), i + num_img_tr * epoch)
+        return loss
+
+    def get_loss(self, batch, batch_idx):
         i = batch_idx
         epoch = self.current_epoch
         sample = batch
@@ -193,48 +225,42 @@ class SegTrainer(pl.LightningModule):
                     grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                     self.writer.add_image(plot_name, grid_image, global_step)
 
-            if training:
-                output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
-                probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
-                
-                logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
-                densecrfloss_copy.backward()
+            output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+            probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+            
+            logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
+            densecrfloss_copy.backward()
 
-            if i % (num_img_tr // 10) == 0:
-                global_step = i + num_img_tr * epoch
-                img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
-                color_imgs = []
-                for e in img_entropy:
-                    e[0,0] = 0
-                    img = colorize(e)[:,:,:3]
-                    color_imgs.append(img)
-                color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
-                grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
-                self.writer.add_image('Entropy', grid_image, global_step)
+            self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
 
-                self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
-                self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
-            if training:
-                self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
-                self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
-                self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
+        if i % (num_img_tr // 10) == 0:
+            global_step = i + num_img_tr * epoch
+            img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
+            color_imgs = []
+            for e in img_entropy:
+                e[0,0] = 0
+                img = colorize(e)[:,:,:3]
+                color_imgs.append(img)
+            color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+            grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+            self.writer.add_image('Entropy', grid_image, global_step)
+            self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
+            self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
+            self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
 
-        if training:
-            self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
-            self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
-            if i % (num_img_tr // 10) == 0:
-                global_step = i + num_img_tr * epoch
-                self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
-        else:
-            self.writer.add_scalar('val/total_loss_iter', loss.item(), i + num_img_tr * epoch)
-
+        self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
+        self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
         return loss
         
     def training_step(self, batch, batch_idx):
         return self.get_loss(batch, batch_idx)
     
     def validation_step(self, batch, batch_idx):
-        return self.get_loss(batch, batch_idx, training=False)
+        return self.get_loss_val(batch, batch_idx)
     
     def test_step(self, batch, batch_idx):
-        return self.get_loss(batch, batch_idx, training=False)
+        return self.get_loss_val(batch, batch_idx)
+
+
