@@ -77,7 +77,7 @@ def get_args():
             'weight_decay': 0.0005,
             'workers': 6}
 
-class SegTrainer(pl.LightningModule):
+class SegModel(pl.LightningModule):
     def __init__(self, hparams, nclass=21, num_img_tr=800):
         super().__init__()
         if not hparams:
@@ -195,7 +195,6 @@ class SegTrainer(pl.LightningModule):
             max_output = (max(torch.abs(torch.max(output)), 
                                 torch.abs(torch.min(output))))
             mean_output = torch.mean(torch.abs(output)).item()
-            # std_output = torch.std(output).item()
             if self.logit_scale is None:
                 probs = nn.Softmax(dim=1)(output) # /max_output*4
             else:
@@ -206,6 +205,8 @@ class SegTrainer(pl.LightningModule):
                 densecrfloss = densecrfloss.cuda()
             loss = celoss + densecrfloss
 
+            """All the code under here is for logging.
+            """
             logits_copy = output.detach().clone().requires_grad_(True)
             max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
                                 torch.abs(torch.min(logits_copy))))
@@ -267,3 +268,110 @@ class SegTrainer(pl.LightningModule):
         return self.get_loss_val(batch, batch_idx)
 
 
+class Mutiscale_Seg_Model(SegModel):
+    def __init__(self, hparams, nclass=21, num_img_tr=800):
+        super().__init__(hparams, nclass, num_img_tr)
+        self.model = DeepLab_Multiscale(num_classes=self.nclass,
+                        backbone=self.hparams.backbone,
+                        output_stride=self.hparams.out_stride,
+                        sync_bn=self.hparams.sync_bn,
+                        freeze_bn=self.hparams.freeze_bn)
+
+    def forward(self, x):
+        return self.model(x) 
+
+    def get_loss(self, batch, batch_idx):
+        i = batch_idx
+        epoch = self.current_epoch
+        sample = batch
+        num_img_tr = self.num_img_tr
+        image, target = sample['image'], sample['label']
+        croppings = (target!=254).float()
+        target[target==254]=255
+
+        self.scheduler(self.optimizer, i, epoch, self.best_pred)
+        self.optimizer.zero_grad()
+        outputs = self.model.multi_forward(image)
+        
+        scale_celoss = [self.criterion(outputs[scale], target) for scale in self.model.scales]
+        celoss = sum(scale_celoss)
+        
+        if self.hparams.densecrfloss ==0:
+            loss = celoss
+        else:
+            # self.densecrflosslayer = self.densecrflosslayer.to('cpu')
+            scale_rloss = {}
+            for scale, output in outputs.items():
+                max_output = (max(torch.abs(torch.max(output)), 
+                                    torch.abs(torch.min(output))))
+                mean_output = torch.mean(torch.abs(output)).item()
+                if self.logit_scale is None:
+                    probs = nn.Softmax(dim=1)(output) # /max_output*4
+                else:
+                    probs = nn.Softmax(dim=1)(output/max_output*self.logit_scale)
+                denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+                scale_rloss[scale] = self.rloss_weight*self.densecrflosslayer(denormalized_image,probs,croppings)
+            
+            densecrfloss = sum(scale_rloss.values())
+            if self.hparams.cuda:
+                densecrfloss = densecrfloss.cuda()
+            loss = celoss + densecrfloss
+
+            """All the code under here is for logging.
+            """
+            logits_copy = output.detach().clone().requires_grad_(True)
+            max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
+                                torch.abs(torch.min(logits_copy))))
+            probs_copy = nn.Softmax(dim=1)(logits_copy) # /max_output_copy*4
+            denormalized_image_copy = denormalized_image.detach().clone()
+            croppings_copy = croppings.detach().clone()
+            densecrfloss_copy = self.rloss_weight*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
+
+            @torch.no_grad()
+            def add_grad_map(grad, plot_name):
+                if i % (num_img_tr // 10) == 0:
+                    global_step = i + num_img_tr * epoch
+                    batch_grads = torch.max(torch.abs(grad), dim=1)[0].detach().cpu().numpy()
+                    color_imgs = []
+                    for grad_img in batch_grads:
+                        grad_img[0,0]=0
+                        img = colorize(grad_img)[:,:,:3]
+                        color_imgs.append(img)
+                    color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+                    grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                    self.writer.add_image(plot_name, grid_image, global_step)
+
+            output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+            probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+            
+            logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
+            densecrfloss_copy.backward()
+
+            self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
+
+            for scale, rloss in scale_rloss.items():
+                self.writer.add_scalar('train/total_loss_iter/rloss_{}'.format(scale), rloss.item(), i + num_img_tr * epoch)
+
+        if i % (num_img_tr // 10) == 0:
+            global_step = i + num_img_tr * epoch
+            img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
+            color_imgs = []
+            for e in img_entropy:
+                e[0,0] = 0
+                img = colorize(e)[:,:,:3]
+                color_imgs.append(img)
+            color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+            grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+            self.writer.add_image('Entropy', grid_image, global_step)
+            self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
+            self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
+            self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
+
+        self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
+        self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
+        return loss
+        
+    def training_step(self, batch, batch_idx):
+        return self.get_loss(batch, batch_idx)

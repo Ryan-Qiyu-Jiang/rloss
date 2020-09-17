@@ -60,6 +60,31 @@ class DeepLab(nn.Module):
                         if p.requires_grad:
                             yield p
 
+class DeepLab_Multiscale(DeepLab):
+    def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
+                 sync_bn=True, freeze_bn=False, scales=[1.0, 0.5, 0.25]):
+        super(DeepLab_Multiscale, self).__init__(backbone, output_stride, num_classes, sync_bn, freeze_bn)
+        if sync_bn == True:
+            BatchNorm = SynchronizedBatchNorm2d
+        else:
+            BatchNorm = nn.BatchNorm2d
+        self.scales = scales
+        self.decoder = build_decoder(num_classes, backbone, BatchNorm, multiscale=True, scales=sales)
+
+    def multi_forward(self, input):
+        x, low_level_feat = self.backbone(input)
+        x = self.aspp(x)
+        outputs = self.decoder(x, low_level_feat)
+        scaled_outputs = {scale : F.interpolate(y, size=input.size()[2:], mode='bilinear', align_corners=True) for scale, y in outputs.items()}
+        return scaled_outputs
+
+    def forward(self, input):
+        x, low_level_feat = self.backbone(input)
+        x = self.aspp(x)
+        outputs = self.decoder(x, low_level_feat)
+        y = F.interpolate(outputs[1.0], size=input.size()[2:], mode='bilinear', align_corners=True)
+        return y
+
 
 if __name__ == "__main__":
     model = DeepLab(backbone='mobilenet', output_stride=16)
