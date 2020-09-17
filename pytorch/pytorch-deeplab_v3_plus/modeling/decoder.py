@@ -92,7 +92,7 @@ class MultiScaleDecoder(nn.Module):
             low_level_feat = F.interpolate(low_level_feat, size=seg_mask_size, mode='bilinear', align_corners=True)
             x = F.interpolate(x, size=seg_mask_size, mode='bilinear', align_corners=True)
             x = torch.cat((x, low_level_feat), dim=1)
-            y = self.last_conv[scale](x)
+            y = self.conv_last[scale](x)
             outputs[scale] = y
 
         return outputs
