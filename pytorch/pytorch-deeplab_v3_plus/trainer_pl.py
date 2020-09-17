@@ -24,6 +24,7 @@ from torch.nn import functional as F
 import pytorch_lightning as pl
 from torch import nn
 import torch
+from argparse import Namespace
 
 def colorize(value, vmin=None, vmax=None, cmap=None):
     vmin = value.min() if vmin is None else vmin
