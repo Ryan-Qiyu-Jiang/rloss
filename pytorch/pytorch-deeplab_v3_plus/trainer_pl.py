@@ -319,7 +319,7 @@ class Mutiscale_Seg_Model(SegModel):
 
             """All the code under here is for logging.
             """
-            logits_copy = output.detach().clone().requires_grad_(True)
+            logits_copy = outputs[1.0].detach().clone().requires_grad_(True)
             max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
                                 torch.abs(torch.min(logits_copy))))
             probs_copy = nn.Softmax(dim=1)(logits_copy) # /max_output_copy*4
@@ -342,7 +342,7 @@ class Mutiscale_Seg_Model(SegModel):
                     self.writer.add_image(plot_name, grid_image, global_step)
 
             output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
-            probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+            probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
             densecrfloss_copy.backward()
@@ -356,6 +356,8 @@ class Mutiscale_Seg_Model(SegModel):
 
         if i % (num_img_tr // 10) == 0:
             global_step = i + num_img_tr * epoch
+            output = outputs[1.0]
+            probs = nn.Softmax(dim=1)(output)
             img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
             color_imgs = []
             for e in img_entropy:
