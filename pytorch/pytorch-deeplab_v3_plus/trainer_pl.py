@@ -341,7 +341,7 @@ class Mutiscale_Seg_Model(SegModel):
                     grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                     self.writer.add_image(plot_name, grid_image, global_step)
 
-            output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+            outputs[1.0].register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
             probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
