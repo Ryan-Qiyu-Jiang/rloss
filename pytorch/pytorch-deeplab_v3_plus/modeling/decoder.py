@@ -84,14 +84,14 @@ class MultiScaleDecoder(nn.Module):
         self._init_weight()
 
 
-    def forward(self, x, low_level_feat):
+    def forward(self, aspp_output, low_level_feat):
         outputs = {}
         for scale in self.scales:
-            low_level_feat = self.conv_low_level[scale](low_level_feat)
+            low = self.conv_low_level[scale](low_level_feat)
             seg_mask_size = tuple([int(scale*e) for e in low_level_feat.size()[2:]])
-            low_level_feat = F.interpolate(low_level_feat, size=seg_mask_size, mode='bilinear', align_corners=True)
-            x = F.interpolate(x, size=seg_mask_size, mode='bilinear', align_corners=True)
-            x = torch.cat((x, low_level_feat), dim=1)
+            low = F.interpolate(low, size=seg_mask_size, mode='bilinear', align_corners=True)
+            x = F.interpolate(aspp_output, size=seg_mask_size, mode='bilinear', align_corners=True)
+            x = torch.cat((x, low), dim=1)
             y = self.conv_last[scale](x)
             outputs[scale] = y
 
