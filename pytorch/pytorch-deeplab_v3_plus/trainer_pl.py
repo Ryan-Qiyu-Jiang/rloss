@@ -41,48 +41,50 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
     return value
 
 class SegTrainer(pl.LightningModule):
-    def __init__(self, args, nclass=21, num_img_tr=800):
+    def __init__(self, hparams, nclass=21, num_img_tr=800):
         super().__init__()
-        self.args = args
-        self.saver = Saver(args)
+        if type(hparams) is dict:
+          hparams = Namespace(**hparams)
+        self.hparams = hparams
+        self.saver = Saver(hparams)
         self.saver.save_experiment_config()
         self.summary = TensorboardSummary(self.saver.experiment_dir)
         self.writer = self.summary.create_summary()
-        self.lr = args.lr
+        self.lr = hparams.lr
         self.nclass = nclass
         self.num_img_tr = num_img_tr
         self.best_pred = 0.0
 
-        kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        kwargs = {'num_workers': hparams.workers, 'pin_memory': True}
+        # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(self.hparams, **kwargs)
 
         self.model = DeepLab(num_classes=self.nclass,
-                        backbone=args.backbone,
-                        output_stride=args.out_stride,
-                        sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn)
+                        backbone=self.hparams.backbone,
+                        output_stride=self.hparams.out_stride,
+                        sync_bn=self.hparams.sync_bn,
+                        freeze_bn=self.hparams.freeze_bn)
 
-        if args.use_balanced_weights:
-            classes_weights_path = os.path.join(Path.db_root_dir(args.dataset), args.dataset+'_classes_weights.npy')
+        if self.hparams.use_balanced_weights:
+            classes_weights_path = os.path.join(Path.db_root_dir(self.hparams.dataset), self.hparams.dataset+'_classes_weights.npy')
             if os.path.isfile(classes_weights_path):
                 weight = np.load(classes_weights_path)
             else:
-                weight = calculate_weigths_labels(args.dataset, self.train_loader, self.nclass)
+                weight = calculate_weigths_labels(self.hparams.dataset, self.train_loader, self.nclass)
             weight = torch.from_numpy(weight.astype(np.float32))
         else:
             weight = None
-        self.criterion = SegmentationLosses(weight=weight, cuda=args.cuda).build_loss(mode=args.loss_type)
+        self.criterion = SegmentationLosses(weight=weight, cuda=self.hparams.cuda).build_loss(mode=self.hparams.loss_type)
         
-        self.rloss_weight = args.densecrfloss
-        if args.densecrfloss >0:
-            self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=args.sigma_rgb, sigma_xy=args.sigma_xy, scale_factor=args.rloss_scale)
+        self.rloss_weight = self.hparams.densecrfloss
+        if self.hparams.densecrfloss >0:
+            self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=self.hparams.sigma_xy, scale_factor=self.hparams.rloss_scale)
             print(self.densecrflosslayer)
         
         self.evaluator = Evaluator(self.nclass)
 
         # Clear start epoch if fine-tuning
-        if args.ft:
-            args.start_epoch = 0
+        if self.hparams.ft:
+            self.hparams.start_epoch = 0
 
     def forward(self, x):
         return self.model(x) 
@@ -90,11 +92,11 @@ class SegTrainer(pl.LightningModule):
     def configure_optimizers(self):
         train_params = [{'params': self.model.get_1x_lr_params(), 'lr': self.lr},
                         {'params': self.model.get_10x_lr_params(), 'lr': self.lr * 10}]
-        self.optimizer = torch.optim.SGD(train_params, momentum=self.args.momentum, 
-                                                weight_decay=self.args.weight_decay, 
-                                                nesterov=self.args.nesterov)
-        self.scheduler = LR_Scheduler(self.args.lr_scheduler, self.args.lr,
-                                            self.args.epochs, self.num_img_tr)
+        self.optimizer = torch.optim.SGD(train_params, momentum=self.hparams.momentum, 
+                                                weight_decay=self.hparams.weight_decay, 
+                                                nesterov=self.hparams.nesterov)
+        self.scheduler = LR_Scheduler(self.hparams.lr_scheduler, self.hparams.lr,
+                                            self.hparams.epochs, self.num_img_tr)
         return self.optimizer #[self.optimizer], [self.scheduler]
 
     def get_loss(self, batch, batch_idx, training=True):
@@ -112,7 +114,7 @@ class SegTrainer(pl.LightningModule):
         
         celoss = self.criterion(output, target)
         
-        if self.args.densecrfloss ==0:
+        if self.hparams.densecrfloss ==0:
             loss = celoss
         else:
             self.densecrflosslayer = self.densecrflosslayer.to('cpu')
@@ -123,7 +125,7 @@ class SegTrainer(pl.LightningModule):
             probs = nn.Softmax(dim=1)(output) # /max_output*4
             denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
             densecrfloss = self.rloss_weight*self.densecrflosslayer(denormalized_image,probs,croppings)
-            if self.args.cuda:
+            if self.hparams.cuda:
                 densecrfloss = densecrfloss.cuda()
             loss = celoss + densecrfloss
 
@@ -170,16 +172,19 @@ class SegTrainer(pl.LightningModule):
 
                 self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
                 self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
+            if training:
+                self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
+                self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
+                self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
 
-            self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
-            self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
-            self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
-
-        self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
-        self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
-        if i % (num_img_tr // 10) == 0:
-            global_step = i + num_img_tr * epoch
-            self.summary.visualize_image(self.writer, self.args.dataset, image, target, output, global_step)
+        if training:
+            self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
+            if i % (num_img_tr // 10) == 0:
+                global_step = i + num_img_tr * epoch
+                self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
+        else:
+            self.writer.add_scalar('val/total_loss_iter', loss.item(), i + num_img_tr * epoch)
 
         return loss
         
