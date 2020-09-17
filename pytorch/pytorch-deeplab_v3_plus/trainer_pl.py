@@ -92,7 +92,7 @@ class SegTrainer(pl.LightningModule):
         self.nclass = nclass
         self.num_img_tr = num_img_tr
         self.best_pred = 0.0
-
+        self.logit_scale = None
         kwargs = {'num_workers': hparams.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(self.hparams, **kwargs)
 
@@ -196,7 +196,10 @@ class SegTrainer(pl.LightningModule):
                                 torch.abs(torch.min(output))))
             mean_output = torch.mean(torch.abs(output)).item()
             # std_output = torch.std(output).item()
-            probs = nn.Softmax(dim=1)(output) # /max_output*4
+            if self.logit_scale is None:
+                probs = nn.Softmax(dim=1)(output) # /max_output*4
+            else:
+                probs = nn.Softmax(dim=1)(output/max_output*self.logit_scale)
             denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
             densecrfloss = self.rloss_weight*self.densecrflosslayer(denormalized_image,probs,croppings)
             if self.hparams.cuda:
