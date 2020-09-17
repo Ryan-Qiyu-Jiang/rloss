@@ -85,10 +85,7 @@ class SegTrainer(pl.LightningModule):
         if type(hparams) is dict:
           hparams = Namespace(**hparams)
         self.hparams = hparams
-        self.saver = Saver(hparams)
-        self.saver.save_experiment_config()
-        self.summary = TensorboardSummary(self.saver.experiment_dir)
-        self.writer = self.summary.create_summary()
+        self.update_loggers()
         self.lr = hparams.lr
         self.nclass = nclass
         self.num_img_tr = num_img_tr
@@ -124,6 +121,12 @@ class SegTrainer(pl.LightningModule):
         # Clear start epoch if fine-tuning
         if self.hparams.ft:
             self.hparams.start_epoch = 0
+
+    def update_loggers(self):
+        self.saver = Saver(self.hparams)
+        self.saver.save_experiment_config()
+        self.summary = TensorboardSummary(self.saver.experiment_dir)
+        self.writer = self.summary.create_summary()
 
     def forward(self, x):
         return self.model(x) 
