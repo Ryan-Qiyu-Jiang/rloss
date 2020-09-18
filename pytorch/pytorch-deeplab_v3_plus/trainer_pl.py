@@ -241,6 +241,7 @@ class SegModel(pl.LightningModule):
 
         if i % (num_img_tr // 10) == 0:
             global_step = i + num_img_tr * epoch
+            probs = nn.Softmax(dim=1)(output)
             img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
             color_imgs = []
             for e in img_entropy:
@@ -267,7 +268,7 @@ class SegModel(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         return self.get_loss_val(batch, batch_idx)
 
-
+# cd rloss && git add . && git commit -m "f" && git push origin master && cd .. && git add . && git commit -m "f" && git push --recurse-submodules=on-demand
 class Mutiscale_Seg_Model(SegModel):
     def __init__(self, hparams, nclass=21, num_img_tr=800):
         super().__init__(hparams, nclass, num_img_tr)
