@@ -11,7 +11,9 @@ def make_data_loader(args, **kwargs):
             train_set = combine_dbs.CombineDBs([train_set, sbd_train], excluded=[val_set])
 
         num_class = train_set.NUM_CLASSES
-        train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
+        if not args.shuffle:
+            args.shuffle=True
+        train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=args.shuffle, **kwargs)
         val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)
         test_loader = None
 
