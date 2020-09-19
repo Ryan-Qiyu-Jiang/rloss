@@ -207,6 +207,7 @@ class SegModel(pl.LightningModule):
 
             """All the code under here is for logging.
             """
+            num_logs = 30
             logits_copy = output.detach().clone().requires_grad_(True)
             max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
                                 torch.abs(torch.min(logits_copy))))
@@ -217,7 +218,7 @@ class SegModel(pl.LightningModule):
 
             @torch.no_grad()
             def add_grad_map(grad, plot_name):
-                if i % (num_img_tr // 10) == 0:
+                if i % (num_img_tr // num_logs) == 0:
                     global_step = i + num_img_tr * epoch
                     batch_grads = torch.max(torch.abs(grad), dim=1)[0].detach().cpu().numpy()
                     color_imgs = []
@@ -239,7 +240,7 @@ class SegModel(pl.LightningModule):
             self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
             self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
 
-        if i % (num_img_tr // 10) == 0:
+        if i % (num_img_tr // num_logs) == 0:
             global_step = i + num_img_tr * epoch
             probs = nn.Softmax(dim=1)(output)
             img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
