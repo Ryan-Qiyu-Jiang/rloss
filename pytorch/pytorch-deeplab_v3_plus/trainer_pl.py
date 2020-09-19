@@ -187,7 +187,7 @@ class SegModel(pl.LightningModule):
         output = self.model(image)
         
         celoss = self.criterion(output, target)
-        num_logs = 30
+        num_logs = 50
         if self.hparams.densecrfloss ==0:
             loss = celoss
         else:
