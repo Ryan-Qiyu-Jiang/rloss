@@ -187,7 +187,7 @@ class SegModel(pl.LightningModule):
         output = self.model(image)
         
         celoss = self.criterion(output, target)
-        
+        num_logs = 30
         if self.hparams.densecrfloss ==0:
             loss = celoss
         else:
@@ -207,7 +207,6 @@ class SegModel(pl.LightningModule):
 
             """All the code under here is for logging.
             """
-            num_logs = 30
             logits_copy = output.detach().clone().requires_grad_(True)
             max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
                                 torch.abs(torch.min(logits_copy))))
