@@ -326,6 +326,7 @@ class Mutiscale_Seg_Model(SegModel):
             scale_rloss = {}
             for scale, probs in scale_probs.items():
                 denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+                print(denormalized_image.shape, probs.shape, croppings.shape)
                 scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
             
             densecrfloss = sum(scale_rloss.values())
