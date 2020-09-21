@@ -75,8 +75,8 @@ class DeepLab_Multiscale(DeepLab):
         x, low_level_feat = self.backbone(input)
         x = self.aspp(x)
         outputs = self.decoder(x, low_level_feat)
-        scaled_outputs = {scale : F.interpolate(y, size=input.size()[2:], mode='bilinear', align_corners=True) for scale, y in outputs.items()}
-        return scaled_outputs
+        return outputs
+        # scaled_outputs = {scale : F.interpolate(y, size=input.size()[2:], mode='bilinear', align_corners=True) for scale, y in outputs.items()}
 
     def forward(self, input):
         x, low_level_feat = self.backbone(input)

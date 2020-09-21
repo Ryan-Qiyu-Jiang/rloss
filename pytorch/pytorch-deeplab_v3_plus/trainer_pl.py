@@ -93,6 +93,7 @@ class SegModel(pl.LightningModule):
         self.num_img_tr = num_img_tr
         self.best_pred = 0.0
         self.logit_scale = None
+        self.entropy_weight = 2e-9
         kwargs = {'num_workers': hparams.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(self.hparams, **kwargs)
 
@@ -112,10 +113,7 @@ class SegModel(pl.LightningModule):
         else:
             weight = None
         self.criterion = SegmentationLosses(weight=weight, cuda=self.hparams.cuda).build_loss(mode=self.hparams.loss_type)
-        
-        if self.hparams.densecrfloss >0:
-            self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=self.hparams.sigma_xy, scale_factor=self.hparams.rloss_scale)
-            print(self.densecrflosslayer)
+        self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=self.hparams.sigma_xy, scale_factor=self.hparams.rloss_scale)
         
         self.evaluator = Evaluator(self.nclass)
 
@@ -156,7 +154,7 @@ class SegModel(pl.LightningModule):
         output = self.model(image)
         celoss = self.criterion(output, target)
         
-        if self.hparams.densecrfloss ==0:
+        if self.hparams.densecrfloss == 0:
             loss = celoss
         else:
             self.densecrflosslayer = self.densecrflosslayer.to('cpu')
@@ -188,7 +186,10 @@ class SegModel(pl.LightningModule):
         celoss = self.criterion(output, target)
         num_logs = 50
         if self.hparams.densecrfloss ==0:
-            loss = celoss
+            probs = nn.Softmax(dim=1)(output)
+            entropy = torch.sum(-probs*torch.log(probs+1e-9))
+            loss = celoss + self.entropy_weight*entropy
+            self.writer.add_scalar('train/total_loss_iter/entropy', entropy.item(), i + num_img_tr * epoch)
         else:
             self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             max_output = (max(torch.abs(torch.max(output)), 
@@ -227,11 +228,11 @@ class SegModel(pl.LightningModule):
                     color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
                     grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                     self.writer.add_image(plot_name, grid_image, global_step)
-            @torch.no_grad()
+
             def add_probs_map(grad, class_idx):
               if i % (num_img_tr // num_logs) == 0:
                 global_step = i + num_img_tr * epoch
-                batch_grads = grad[0][class_idx].detach().cpu().numpy()
+                batch_grads = grad[:,class_idx,::].detach().cpu().numpy()
                 color_imgs = []
                 for grad_img in batch_grads:
                     grad_img[0,0]=0
@@ -244,7 +245,8 @@ class SegModel(pl.LightningModule):
             output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
             probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             probs.register_hook(lambda grad: add_probs_map(grad, 0)) 
-
+            # probs.register_hook(lambda grad: add_probs_map(grad, 12))
+            
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
             densecrfloss_copy.backward()
 
@@ -306,8 +308,9 @@ class Mutiscale_Seg_Model(SegModel):
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         outputs = self.model.multi_forward(image)
+        scaled_outputs = {scale : F.interpolate(y, size=image.size()[2:], mode='bilinear', align_corners=True) for scale, y in outputs.items()}
         
-        scale_celoss = [self.criterion(outputs[scale], target) for scale in self.model.scales]
+        scale_celoss = [self.criterion(scaled_outputs[scale], target) for scale in self.model.scales]
         celoss = sum(scale_celoss)
         
         if self.hparams.densecrfloss ==0:
