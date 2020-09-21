@@ -66,12 +66,12 @@ class MultiScaleDecoder(nn.Module):
             raise NotImplementedError
 
         self.scales = scales
-        self.conv_low_level = nn.ModuleDict({scale : nn.Sequential(nn.Conv2d(low_level_inplanes, 48, 1, bias=False),
+        self.conv_low_level = nn.ModuleDict({str(scale) : nn.Sequential(nn.Conv2d(low_level_inplanes, 48, 1, bias=False),
                                              BatchNorm(48),
                                              nn.ReLU()) 
                                              for scale in self.scales})
 
-        self.conv_last = nn.ModuleDict({scale : nn.Sequential(nn.Conv2d(304, 256, kernel_size=3, stride=1, padding=1, bias=False),
+        self.conv_last = nn.ModuleDict({str(scale) : nn.Sequential(nn.Conv2d(304, 256, kernel_size=3, stride=1, padding=1, bias=False),
                                        BatchNorm(256),
                                        nn.ReLU(),
                                        nn.Dropout(0.5),
@@ -87,12 +87,12 @@ class MultiScaleDecoder(nn.Module):
     def forward(self, aspp_output, low_level_feat):
         outputs = {}
         for scale in self.scales:
-            low = self.conv_low_level[scale](low_level_feat)
+            low = self.conv_low_level[str(scale)](low_level_feat)
             seg_mask_size = tuple([int(scale*e) for e in low_level_feat.size()[2:]])
             low = F.interpolate(low, size=seg_mask_size, mode='bilinear', align_corners=True)
             x = F.interpolate(aspp_output, size=seg_mask_size, mode='bilinear', align_corners=True)
             x = torch.cat((x, low), dim=1)
-            y = self.conv_last[scale](x)
+            y = self.conv_last[str(scale)](x)
             outputs[scale] = y
 
         return outputs
