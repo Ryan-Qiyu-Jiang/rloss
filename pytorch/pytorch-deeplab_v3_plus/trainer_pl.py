@@ -357,22 +357,20 @@ class Mutiscale_Seg_Model(SegModel):
                     grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                     self.writer.add_image(plot_name, grid_image, global_step)
 
-            outputs[1.0].register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+            scaled_outputs[1.0].register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
             probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
             densecrfloss_copy.backward()
 
             self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
-            self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
-            self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
 
             for scale, rloss in scale_rloss.items():
                 self.writer.add_scalar('train/total_loss_iter/rloss_{}'.format(scale), rloss.item(), i + num_img_tr * epoch)
 
         if i % (num_img_tr // num_logs) == 0:
             global_step = i + num_img_tr * epoch
-            output = outputs[1.0]
+            output = scaled_outputs[1.0]
             probs = nn.Softmax(dim=1)(output)
             img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
             color_imgs = []
