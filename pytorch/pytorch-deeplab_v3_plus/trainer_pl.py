@@ -287,6 +287,7 @@ class SegModel(pl.LightningModule):
 class Mutiscale_Seg_Model(SegModel):
     def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25]):
         super().__init__(hparams, nclass, num_img_tr)
+        self.scales = scales
         self.model = DeepLab_Multiscale(num_classes=self.nclass,
                         backbone=self.hparams.backbone,
                         output_stride=self.hparams.out_stride,
@@ -314,8 +315,12 @@ class Mutiscale_Seg_Model(SegModel):
         scale_celoss = [self.criterion(scaled_outputs[scale], target) for scale in self.model.scales]
         celoss = sum(scale_celoss)
         
+        scale_probs = [nn.Softmax(dim=1)(scaled_outputs[scale]) for scale in self.model.scales]
+        scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs]
+        entropy = sum(scale_entropy)
+
         if self.hparams.densecrfloss ==0:
-            loss = celoss
+            loss = celoss + self.entropy_weight*entropy
         else:
             # self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             scale_rloss = {}
