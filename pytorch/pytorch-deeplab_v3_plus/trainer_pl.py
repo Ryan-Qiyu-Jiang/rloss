@@ -326,12 +326,13 @@ class Mutiscale_Seg_Model(SegModel):
             scale_rloss = {}
             scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in outputs.items()}
             for scale, probs in scale_probs.items():
-                scaled_size = probs.shape[2:]
+                scaled_size = tuple([int(scale*e) for e in sample['image'].shape[2:]])
+                rescaled_probs = F.interpolate(probs, size=scaled_size, mode='bilinear', align_corners=True)
                 scaled_img = F.interpolate(sample['image'], size=scaled_size, mode='bilinear', align_corners=True)
                 denormalized_image = denormalizeimage(scaled_img, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
                 scaled_roi = F.interpolate(croppings.unsqueeze(0), size=scaled_size, mode='nearest').squeeze(0)
-                print(denormalized_image.shape, probs.shape, scaled_roi.shape)
-                scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image, probs, scaled_roi)
+                print(denormalized_image.shape, rescaled_probs.shape, scaled_roi.shape)
+                scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image, rescaled_probs, scaled_roi)
             
             densecrfloss = sum(scale_rloss.values())
             if self.hparams.cuda:
@@ -344,7 +345,7 @@ class Mutiscale_Seg_Model(SegModel):
             max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
                                 torch.abs(torch.min(logits_copy))))
             probs_copy = nn.Softmax(dim=1)(logits_copy) # /max_output_copy*4
-            denormalized_image_copy = denormalized_image.detach().clone()
+            denormalized_image_copy = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)).detach().clone()
             croppings_copy = croppings.detach().clone()
             densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
 
