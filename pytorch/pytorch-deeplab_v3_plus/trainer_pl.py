@@ -285,13 +285,14 @@ class SegModel(pl.LightningModule):
 
 # cd rloss && git add . && git commit -m "f" && git push origin master && cd .. && git add . && git commit -m "f" && git push --recurse-submodules=on-demand
 class Mutiscale_Seg_Model(SegModel):
-    def __init__(self, hparams, nclass=21, num_img_tr=800):
+    def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25]):
         super().__init__(hparams, nclass, num_img_tr)
         self.model = DeepLab_Multiscale(num_classes=self.nclass,
                         backbone=self.hparams.backbone,
                         output_stride=self.hparams.out_stride,
                         sync_bn=self.hparams.sync_bn,
-                        freeze_bn=self.hparams.freeze_bn)
+                        freeze_bn=self.hparams.freeze_bn,
+                        scales=scales)
 
     def forward(self, x):
         return self.model(x) 
