@@ -66,12 +66,12 @@ class MultiScaleDecoder(nn.Module):
             raise NotImplementedError
 
         self.scales = scales
-        self.conv_low_level = {scale : nn.Sequential(nn.Conv2d(low_level_inplanes, 48, 1, bias=False),
+        self.conv_low_level = nn.ModuleDict({scale : nn.Sequential(nn.Conv2d(low_level_inplanes, 48, 1, bias=False),
                                              BatchNorm(48),
                                              nn.ReLU()) 
-                                             for scale in self.scales}
+                                             for scale in self.scales})
 
-        self.conv_last = {scale : nn.Sequential(nn.Conv2d(304, 256, kernel_size=3, stride=1, padding=1, bias=False),
+        self.conv_last = nn.ModuleDict({scale : nn.Sequential(nn.Conv2d(304, 256, kernel_size=3, stride=1, padding=1, bias=False),
                                        BatchNorm(256),
                                        nn.ReLU(),
                                        nn.Dropout(0.5),
@@ -80,7 +80,7 @@ class MultiScaleDecoder(nn.Module):
                                        nn.ReLU(),
                                        nn.Dropout(0.1),
                                        nn.Conv2d(256, num_classes, kernel_size=1, stride=1))
-                                       for scale in self.scales}
+                                       for scale in self.scales})
         self._init_weight()
 
 
