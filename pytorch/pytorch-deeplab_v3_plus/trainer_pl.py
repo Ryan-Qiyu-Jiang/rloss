@@ -113,7 +113,6 @@ class SegModel(pl.LightningModule):
             weight = None
         self.criterion = SegmentationLosses(weight=weight, cuda=self.hparams.cuda).build_loss(mode=self.hparams.loss_type)
         
-        self.rloss_weight = self.hparams.densecrfloss
         if self.hparams.densecrfloss >0:
             self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=self.hparams.sigma_xy, scale_factor=self.hparams.rloss_scale)
             print(self.densecrflosslayer)
@@ -165,7 +164,7 @@ class SegModel(pl.LightningModule):
                                 torch.abs(torch.min(output))))
             probs = nn.Softmax(dim=1)(output) # /max_output*4
             denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            densecrfloss = self.rloss_weight*self.densecrflosslayer(denormalized_image,probs,croppings)
+            densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
             if self.hparams.cuda:
                 densecrfloss = densecrfloss.cuda()
             loss = celoss + densecrfloss
@@ -200,7 +199,7 @@ class SegModel(pl.LightningModule):
             else:
                 probs = nn.Softmax(dim=1)(output/max_output*self.logit_scale)
             denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            densecrfloss = self.rloss_weight*self.densecrflosslayer(denormalized_image,probs,croppings)
+            densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
             if self.hparams.cuda:
                 densecrfloss = densecrfloss.cuda()
             loss = celoss + densecrfloss
@@ -213,7 +212,7 @@ class SegModel(pl.LightningModule):
             probs_copy = nn.Softmax(dim=1)(logits_copy) # /max_output_copy*4
             denormalized_image_copy = denormalized_image.detach().clone()
             croppings_copy = croppings.detach().clone()
-            densecrfloss_copy = self.rloss_weight*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
+            densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
 
             @torch.no_grad()
             def add_grad_map(grad, plot_name):
@@ -228,10 +227,24 @@ class SegModel(pl.LightningModule):
                     color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
                     grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                     self.writer.add_image(plot_name, grid_image, global_step)
+            @torch.no_grad()
+            def add_probs_map(grad, class_idx):
+              if i % (num_img_tr // num_logs) == 0:
+                global_step = i + num_img_tr * epoch
+                batch_grads = grad[0][class_idx].detach().cpu().numpy()
+                color_imgs = []
+                for grad_img in batch_grads:
+                    grad_img[0,0]=0
+                    img = colorize(grad_img)[:,:,:3]
+                    color_imgs.append(img)
+                color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+                grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                self.writer.add_image('Grad Probs {}'.format(class_idx), grid_image, global_step)
 
             output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
             probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
-            
+            probs.register_hook(lambda grad: add_probs_map(grad, 0)) 
+
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
             densecrfloss_copy.backward()
 
@@ -311,7 +324,7 @@ class Mutiscale_Seg_Model(SegModel):
                 else:
                     probs = nn.Softmax(dim=1)(output/max_output*self.logit_scale)
                 denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-                scale_rloss[scale] = self.rloss_weight*self.densecrflosslayer(denormalized_image,probs,croppings)
+                scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
             
             densecrfloss = sum(scale_rloss.values())
             if self.hparams.cuda:
@@ -326,7 +339,7 @@ class Mutiscale_Seg_Model(SegModel):
             probs_copy = nn.Softmax(dim=1)(logits_copy) # /max_output_copy*4
             denormalized_image_copy = denormalized_image.detach().clone()
             croppings_copy = croppings.detach().clone()
-            densecrfloss_copy = self.rloss_weight*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
+            densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
 
             @torch.no_grad()
             def add_grad_map(grad, plot_name):
