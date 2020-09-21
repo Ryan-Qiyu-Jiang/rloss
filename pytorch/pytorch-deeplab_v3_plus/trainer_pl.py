@@ -315,7 +315,7 @@ class Mutiscale_Seg_Model(SegModel):
         scale_celoss = [self.criterion(scaled_outputs[scale], target) for scale in self.model.scales]
         celoss = sum(scale_celoss)
         
-        scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in self.scaled_outputs.items()}
+        scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in scaled_outputs.items()}
         scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
         entropy = sum(scale_entropy)
 
