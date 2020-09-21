@@ -330,6 +330,7 @@ class Mutiscale_Seg_Model(SegModel):
                 scaled_img = F.interpolate(sample['image'], size=scaled_size, mode='bilinear', align_corners=True)
                 denormalized_image = denormalizeimage(scaled_img, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
                 scaled_roi = F.interpolate(croppings.unsqueeze(0), size=scaled_size, mode='nearest').squeeze(0)
+                print(denormalized_image.shape, probs.shape, scaled_roi.shape)
                 scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image, probs, scaled_roi)
             
             densecrfloss = sum(scale_rloss.values())
