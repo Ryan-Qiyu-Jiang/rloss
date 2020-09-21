@@ -296,7 +296,7 @@ class Mutiscale_Seg_Model(SegModel):
                         scales=scales)
 
     def forward(self, x):
-        return self.model(x) 
+        return self.model(x)
 
     def get_loss(self, batch, batch_idx):
         i = batch_idx
@@ -319,14 +319,18 @@ class Mutiscale_Seg_Model(SegModel):
         scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
         entropy = sum(scale_entropy)
 
-        if self.hparams.densecrfloss ==0:
+        if self.hparams.densecrfloss==0:
             loss = celoss + self.entropy_weight*entropy
         else:
             # self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             scale_rloss = {}
+            scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in outputs.items()}
             for scale, probs in scale_probs.items():
-                denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-                scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
+                scaled_size = probs.shape[2:]
+                scaled_img = F.interpolate(sample['image'], size=scaled_size, mode='bilinear', align_corners=True)
+                denormalized_image = denormalizeimage(scaled_img, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+                scaled_roi = F.interpolate(croppings, size=scaled_size, mode='nearest')
+                scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image, probs, scaled_roi)
             
             densecrfloss = sum(scale_rloss.values())
             if self.hparams.cuda:
@@ -373,7 +377,6 @@ class Mutiscale_Seg_Model(SegModel):
             scaled_outputs[1.0].register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
             probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             probs_copy.register_hook(lambda grad: add_probs_map(grad, 0)) 
-            
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
             densecrfloss_copy.backward()
 
