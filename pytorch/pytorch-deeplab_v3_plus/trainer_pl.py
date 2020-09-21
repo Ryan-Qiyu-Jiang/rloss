@@ -315,8 +315,8 @@ class Mutiscale_Seg_Model(SegModel):
         scale_celoss = [self.criterion(scaled_outputs[scale], target) for scale in self.model.scales]
         celoss = sum(scale_celoss)
         
-        scale_probs = [nn.Softmax(dim=1)(scaled_outputs[scale]) for scale in self.model.scales]
-        scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs]
+        scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in self.scaled_outputs.items()}
+        scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
         entropy = sum(scale_entropy)
 
         if self.hparams.densecrfloss ==0:
@@ -324,14 +324,7 @@ class Mutiscale_Seg_Model(SegModel):
         else:
             # self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             scale_rloss = {}
-            for scale, output in outputs.items():
-                max_output = (max(torch.abs(torch.max(output)), 
-                                    torch.abs(torch.min(output))))
-                mean_output = torch.mean(torch.abs(output)).item()
-                if self.logit_scale is None:
-                    probs = nn.Softmax(dim=1)(output) # /max_output*4
-                else:
-                    probs = nn.Softmax(dim=1)(output/max_output*self.logit_scale)
+            for scale, probs in scale_probs.items():
                 denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
                 scale_rloss[scale] = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
             
