@@ -317,10 +317,10 @@ class Mutiscale_Seg_Model(SegModel):
         
         scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in scaled_outputs.items()}
         scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
-        entropy = sum(scale_entropy)
+        entropy = self.entropy_weight*sum(scale_entropy)
 
         if self.hparams.densecrfloss==0:
-            loss = celoss + self.entropy_weight*entropy
+            loss = celoss + entropy
         else:
             # self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             scale_rloss = {}
@@ -336,7 +336,7 @@ class Mutiscale_Seg_Model(SegModel):
             densecrfloss = sum(scale_rloss.values())
             if self.hparams.cuda:
                 densecrfloss = densecrfloss.cuda()
-            loss = celoss + densecrfloss
+            loss = celoss + densecrfloss + entropy
 
             """All the code under here is for logging.
             """
