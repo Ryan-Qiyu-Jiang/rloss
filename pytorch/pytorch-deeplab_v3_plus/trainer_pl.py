@@ -295,6 +295,8 @@ class Mutiscale_Seg_Model(SegModel):
                         freeze_bn=self.hparams.freeze_bn,
                         scales=scales)
 
+        self.CRFLoss = {scale:DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=int(self.hparams.sigma_xy*scale), scale_factor=self.hparams.rloss_scale) for scale in self.scales}
+
     def forward(self, x):
         return self.model(x)
 
