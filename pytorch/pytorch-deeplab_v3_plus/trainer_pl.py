@@ -296,6 +296,7 @@ class Mutiscale_Seg_Model(SegModel):
                         scales=scales)
 
         self.CRFLoss = {scale:DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=int(self.hparams.sigma_xy*scale), scale_factor=self.hparams.rloss_scale) for scale in self.scales}
+        self.num_logs = 50
 
     def forward(self, x):
         return self.model(x)
@@ -308,7 +309,7 @@ class Mutiscale_Seg_Model(SegModel):
         image, target = sample['image'], sample['label']
         croppings = (target!=254).float()
         target[target==254]=255
-        num_logs = 50
+        num_logs = self.num_logs
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         outputs = self.model.multi_forward(image)
