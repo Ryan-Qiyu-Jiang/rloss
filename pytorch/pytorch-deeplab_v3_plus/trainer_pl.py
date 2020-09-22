@@ -78,7 +78,7 @@ def get_args():
             'workers': 6}
 
 class SegModel(pl.LightningModule):
-    def __init__(self, hparams, nclass=21, num_img_tr=800):
+    def __init__(self, hparams, nclass=21, num_img_tr=800, load_model=True):
         super().__init__()
         if not hparams:
             print('Loading default hyperparams!')
@@ -96,12 +96,12 @@ class SegModel(pl.LightningModule):
         self.entropy_weight = 2e-9
         kwargs = {'num_workers': hparams.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(self.hparams, **kwargs)
-
-        self.model = DeepLab(num_classes=self.nclass,
-                        backbone=self.hparams.backbone,
-                        output_stride=self.hparams.out_stride,
-                        sync_bn=self.hparams.sync_bn,
-                        freeze_bn=self.hparams.freeze_bn)
+        if load_model:
+            self.model = DeepLab(num_classes=self.nclass,
+                            backbone=self.hparams.backbone,
+                            output_stride=self.hparams.out_stride,
+                            sync_bn=self.hparams.sync_bn,
+                            freeze_bn=self.hparams.freeze_bn)
 
         if self.hparams.use_balanced_weights:
             classes_weights_path = os.path.join(Path.db_root_dir(self.hparams.dataset), self.hparams.dataset+'_classes_weights.npy')
@@ -286,7 +286,7 @@ class SegModel(pl.LightningModule):
 # cd rloss && git add . && git commit -m "f" && git push origin master && cd .. && git add . && git commit -m "f" && git push --recurse-submodules=on-demand
 class Mutiscale_Seg_Model(SegModel):
     def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25]):
-        super().__init__(hparams, nclass, num_img_tr)
+        super().__init__(hparams, nclass, num_img_tr, load_model=False)
         self.scales = scales
         self.model = DeepLab_Multiscale(num_classes=self.nclass,
                         backbone=self.hparams.backbone,
