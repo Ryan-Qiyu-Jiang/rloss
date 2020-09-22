@@ -370,7 +370,7 @@ class Mutiscale_Seg_Model(SegModel):
                     grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                     self.writer.add_image(plot_name, grid_image, global_step)
 
-            def add_probs_map(grad, class_idx):
+            def add_probs_map(grad, class_idx, name='Probs'):
               if i % (num_img_tr // num_logs) == 0:
                 global_step = i + num_img_tr * epoch
                 batch_grads = grad[:,class_idx,::].detach().cpu().numpy()
@@ -381,18 +381,18 @@ class Mutiscale_Seg_Model(SegModel):
                     color_imgs.append(img)
                 color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
                 grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
-                self.writer.add_image('Grad Probs {}'.format(class_idx), grid_image, global_step)
+                self.writer.add_image('Grad {} {}'.format(name, class_idx), grid_image, global_step)
 
             scaled_outputs[1.0].register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
             # probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             # probs_copy.register_hook(lambda grad: add_probs_map(grad, 0)) 
             # logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
-
+            print(logits_copy.keys())
             for scale, logits in logits_copy.items():
                 logits.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss {}'.format(scale)))
             for scale, probs in probs_copy.items():
                 probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs {}'.format(scale)))
-                probs.register_hook(lambda grad: add_probs_map(grad, 0)) 
+                probs.register_hook(lambda grad: add_probs_map(grad, 0, 'Probs {}'.format(scale))) 
 
             densecrfloss_copy.backward()
 
