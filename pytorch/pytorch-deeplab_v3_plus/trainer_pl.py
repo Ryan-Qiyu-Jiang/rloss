@@ -343,13 +343,18 @@ class Mutiscale_Seg_Model(SegModel):
 
             """All the code under here is for logging.
             """
-            logits_copy = scaled_outputs[1.0].detach().clone().requires_grad_(True)
-            max_output_copy = (max(torch.abs(torch.max(logits_copy)), 
-                                torch.abs(torch.min(logits_copy))))
-            probs_copy = nn.Softmax(dim=1)(logits_copy) # /max_output_copy*4
-            denormalized_image_copy = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)).detach().clone()
-            croppings_copy = croppings.detach().clone()
-            densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
+            rloss_copy = {}
+            logits_copy = {scale:y.detach().clone().requires_grad_(True) for scale,y in outputs.items()}
+            probs_copy = {scale:nn.Softmax(dim=1)(y) for scale, y in logits_copy.items()}
+            for scale, probs in probs_copy.items():
+                scaled_size = tuple([int(scale*e) for e in sample['image'].shape[2:]])
+                rescaled_probs = F.interpolate(probs, size=scaled_size, mode='bilinear', align_corners=True)
+                scaled_img = F.interpolate(sample['image'], size=scaled_size, mode='bilinear', align_corners=True)
+                denormalized_image = denormalizeimage(scaled_img, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+                scaled_roi = F.interpolate(croppings.unsqueeze(0), size=scaled_size, mode='nearest').squeeze(0)
+                rloss_copy[scale] = self.hparams.densecrfloss*self.CRFLoss[scale](denormalized_image, rescaled_probs, scaled_roi)
+
+            densecrfloss_copy = sum(rloss_copy.values())
 
             @torch.no_grad()
             def add_grad_map(grad, plot_name):
@@ -379,9 +384,16 @@ class Mutiscale_Seg_Model(SegModel):
                 self.writer.add_image('Grad Probs {}'.format(class_idx), grid_image, global_step)
 
             scaled_outputs[1.0].register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
-            probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
-            probs_copy.register_hook(lambda grad: add_probs_map(grad, 0)) 
-            logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
+            # probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+            # probs_copy.register_hook(lambda grad: add_probs_map(grad, 0)) 
+            # logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
+
+            for scale, logits in logits_copy.items():
+                logits.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss {}'.format(scale)))
+            for scale, probs in probs_copy.items():
+                probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs {}'.format(scale)))
+                probs.register_hook(lambda grad: add_probs_map(grad, 0)) 
+
             densecrfloss_copy.backward()
 
             self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
