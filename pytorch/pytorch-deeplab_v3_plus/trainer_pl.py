@@ -384,18 +384,20 @@ class Mutiscale_Seg_Model(SegModel):
                 self.writer.add_image('Grad {} {}'.format(name, class_idx), grid_image, global_step)
 
             scaled_outputs[1.0].register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
-            # probs_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
-            # probs_copy.register_hook(lambda grad: add_probs_map(grad, 0)) 
-            # logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
-            print(logits_copy.keys())
-            for scale, logits in logits_copy.items():
-                logits.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss {}'.format(scale)))
-            for scale, probs in probs_copy.items():
-                probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs {}'.format(scale)))
-                probs.register_hook(lambda grad: add_probs_map(grad, 0, 'Probs {}'.format(scale))) 
+
+            for _, logits in logits_copy.items():
+                logits.retain_grad()
+            for _, probs in probs_copy.items():
+                probs.retain_grad()
 
             densecrfloss_copy.backward()
 
+            for scale, logits in logits_copy.items():
+                add_grad_map(logits.grad, 'Grad Logits Rloss {}'.format(scale))
+            for scale, probs in probs_copy.items():
+                add_grad_map(probs.grad, 'Grad Probs {}'.format(scale))
+                add_probs_map(probs.grad, 0, 'Probs {}'.format(scale))
+                
             self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
 
             for scale, rloss in scale_rloss.items():
