@@ -295,7 +295,7 @@ class Mutiscale_Seg_Model(SegModel):
                         freeze_bn=self.hparams.freeze_bn,
                         scales=scales)
 
-        self.hparams.CRFLoss = {scale:DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=int(self.hparams.sigma_xy*scale), scale_factor=self.hparams.rloss_scale) for scale in self.scales}
+        self.CRFLoss = {scale:DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=int(self.hparams.sigma_xy*scale), scale_factor=self.hparams.rloss_scale) for scale in self.scales}
         self.num_logs = 50
 
     def forward(self, x):
@@ -333,7 +333,7 @@ class Mutiscale_Seg_Model(SegModel):
                 scaled_img = F.interpolate(sample['image'], size=scaled_size, mode='bilinear', align_corners=True)
                 denormalized_image = denormalizeimage(scaled_img, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
                 scaled_roi = F.interpolate(croppings.unsqueeze(0), size=scaled_size, mode='nearest').squeeze(0)
-                scale_rloss[scale] = self.hparams.densecrfloss*self.rloss_weight[scale]*self.CRFLoss[scale](denormalized_image, rescaled_probs, scaled_roi)
+                scale_rloss[scale] = self.hparams.densecrfloss*self.hparams.rloss_weight[scale]*self.CRFLoss[scale](denormalized_image, rescaled_probs, scaled_roi)
             
             densecrfloss = sum(scale_rloss.values())
             if self.hparams.cuda:
@@ -351,7 +351,7 @@ class Mutiscale_Seg_Model(SegModel):
                 scaled_img = F.interpolate(sample['image'], size=scaled_size, mode='bilinear', align_corners=True)
                 denormalized_image = denormalizeimage(scaled_img, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
                 scaled_roi = F.interpolate(croppings.unsqueeze(0), size=scaled_size, mode='nearest').squeeze(0)
-                rloss_copy[scale] = self.hparams.densecrfloss*self.rloss_weight[scale]*self.CRFLoss[scale](denormalized_image, rescaled_probs, scaled_roi)
+                rloss_copy[scale] = self.hparams.densecrfloss*self.hparams.rloss_weight[scale]*self.CRFLoss[scale](denormalized_image, rescaled_probs, scaled_roi)
 
             densecrfloss_copy = sum(rloss_copy.values())
 
