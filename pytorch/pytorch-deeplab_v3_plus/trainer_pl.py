@@ -179,7 +179,7 @@ class SegModel(pl.LightningModule):
         croppings = (target!=254).float()
         target[target==254]=255
         num_logs = 50
-        do_log = (i % (num_img_tr // num_logs) == 0 or ((i + num_img_tr * epoch) < 100 and i%5))
+        do_log = (i % (num_img_tr // num_logs) == 0 or ((i + num_img_tr * epoch) < 100 and i%5==0))
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         output = self.model(image)
