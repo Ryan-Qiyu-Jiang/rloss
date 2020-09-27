@@ -310,6 +310,7 @@ class Mutiscale_Seg_Model(SegModel):
         croppings = (target!=254).float()
         target[target==254]=255
         num_logs = self.num_logs
+        do_log = (i % (num_img_tr // num_logs) == 0 or (i + num_img_tr * epoch) < 100)
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         outputs = self.model.multi_forward(image)
@@ -357,7 +358,7 @@ class Mutiscale_Seg_Model(SegModel):
 
             @torch.no_grad()
             def add_grad_map(grad, plot_name):
-                if i % (num_img_tr // num_logs) == 0:
+                if do_log:
                     global_step = i + num_img_tr * epoch
                     batch_grads = torch.max(torch.abs(grad), dim=1)[0].detach().cpu().numpy()
                     color_imgs = []
@@ -370,7 +371,7 @@ class Mutiscale_Seg_Model(SegModel):
                     self.writer.add_image(plot_name, grid_image, global_step)
 
             def add_probs_map(grad, class_idx, name='Probs'):
-              if i % (num_img_tr // num_logs) == 0:
+              if do_log:
                 global_step = i + num_img_tr * epoch
                 batch_grads = grad[:,class_idx,::].detach().cpu().numpy()
                 color_imgs = []
@@ -402,7 +403,7 @@ class Mutiscale_Seg_Model(SegModel):
             for scale, rloss in scale_rloss.items():
                 self.writer.add_scalar('train/total_loss_iter/rloss_{}'.format(scale), rloss.item(), i + num_img_tr * epoch)
 
-        if i % (num_img_tr // num_logs) == 0:
+        if do_log:
             global_step = i + num_img_tr * epoch
             output = scaled_outputs[1.0]
             probs = nn.Softmax(dim=1)(output)
