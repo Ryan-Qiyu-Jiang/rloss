@@ -178,13 +178,13 @@ class SegModel(pl.LightningModule):
         image, target = sample['image'], sample['label']
         croppings = (target!=254).float()
         target[target==254]=255
+        num_logs = 50
         do_log = (i % (num_img_tr // num_logs) == 0 or (i + num_img_tr * epoch) < 100)
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         output = self.model(image)
         
         celoss = self.criterion(output, target)
-        num_logs = 50
         if self.hparams.densecrfloss ==0:
             probs = nn.Softmax(dim=1)(output)
             entropy = torch.sum(-probs*torch.log(probs+1e-9))
