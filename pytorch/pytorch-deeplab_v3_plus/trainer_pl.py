@@ -285,7 +285,7 @@ class SegModel(pl.LightningModule):
 
 # cd rloss && git add . && git commit -m "f" && git push origin master && cd .. && git add . && git commit -m "f" && git push --recurse-submodules=on-demand
 class Mutiscale_Seg_Model(SegModel):
-    def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25]):
+    def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25], sigma_xy=[25, 25, 25]):
         super().__init__(hparams, nclass, num_img_tr, load_model=False)
         self.scales = scales
         self.model = DeepLab_Multiscale(num_classes=self.nclass,
@@ -295,7 +295,7 @@ class Mutiscale_Seg_Model(SegModel):
                         freeze_bn=self.hparams.freeze_bn,
                         scales=scales)
 
-        self.CRFLoss = {scale:DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=int(self.hparams.sigma_xy), scale_factor=self.hparams.rloss_scale) for scale in self.scales}
+        self.CRFLoss = {scale:DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=sigma_xy[i], scale_factor=self.hparams.rloss_scale) for i, scale in enumerate(self.scales)}
         self.num_logs = 50
         self.detailed_early = False
 
