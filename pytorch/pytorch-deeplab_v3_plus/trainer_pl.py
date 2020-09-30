@@ -399,10 +399,10 @@ class Mutiscale_Seg_Model(SegModel):
                 add_grad_map(probs.grad, 'Grad Probs {}'.format(scale))
                 add_probs_map(probs.grad, 0, 'Probs {}'.format(scale))
 
-            self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/rloss', densecrfloss.item(), i + num_img_tr * epoch)
 
             for scale, rloss in scale_rloss.items():
-                self.writer.add_scalar('train/total_loss_iter/rloss_{}'.format(scale), rloss.item(), i + num_img_tr * epoch)
+                self.writer.add_scalar('train/rloss_{}'.format(scale), rloss.item(), i + num_img_tr * epoch)
 
         if do_log:
             global_step = i + num_img_tr * epoch
@@ -417,13 +417,13 @@ class Mutiscale_Seg_Model(SegModel):
             color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
             grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
             self.writer.add_image('Entropy', grid_image, global_step)
-            self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
-            self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
+            self.writer.add_histogram('train/logit_histogram', output, i + num_img_tr * epoch)
+            self.writer.add_histogram('train/probs_histogram', probs, i + num_img_tr * epoch)
             self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
-        self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
-        self.writer.add_scalar('train/total_loss_iter/entropy', entropy.item(), i + num_img_tr * epoch)
+        self.writer.add_scalar('train/ce', celoss.item(), i + num_img_tr * epoch)
+        self.writer.add_scalar('train/entropy', entropy.item(), i + num_img_tr * epoch)
         return loss
         
     def training_step(self, batch, batch_idx):
