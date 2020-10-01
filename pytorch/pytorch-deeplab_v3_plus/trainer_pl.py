@@ -311,7 +311,7 @@ class Mutiscale_Seg_Model(SegModel):
         croppings = (target!=254).float()
         target[target==254]=255
         num_logs = self.num_logs
-        do_log = (i % (num_img_tr // num_logs) == 0 or (self.detailed_early and (i + num_img_tr * epoch) < 100) and (i+num_img_tr*epoch % 5 ==0) )
+        do_log = (i % (num_img_tr // num_logs) == 0 or (self.detailed_early and (i + num_img_tr * epoch) < 100) and ((i+num_img_tr*epoch) % 5 ==0) )
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         outputs = self.model.multi_forward(image)
