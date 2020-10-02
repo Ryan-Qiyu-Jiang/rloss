@@ -407,9 +407,9 @@ class Mutiscale_Seg_Model(SegModel):
         if do_log:
             global_step = i + num_img_tr * epoch
             output_scale = 1.0
-            if self.hparams.rloss_weights[1.0] == 0:
+            if self.hparams.rloss_weights['1.0'] == 0:
                 output_scale = 0.5
-                if self.hparams.rloss_weights[0.5] == 0:
+                if self.hparams.rloss_weights['0.5'] == 0:
                     output_scale = 0.25
                 
             output = scaled_outputs[output_scale]
