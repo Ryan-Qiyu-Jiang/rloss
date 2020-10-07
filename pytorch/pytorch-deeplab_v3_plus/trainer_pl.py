@@ -439,7 +439,7 @@ class Mutiscale_Seg_Model(SegModel):
 
 
 class Variable_Bandwidth_Model(SegModel):
-    def __init__(self, hparams, xy_generator=lambda _,_:100, nclass=21, num_img_tr=800):
+    def __init__(self, hparams, xy_generator=lambda a,b:100, nclass=21, num_img_tr=800):
         super().__init__(hparams, nclass, num_img_tr, load_model=True)
 
         self.xy_generator = xy_generator
