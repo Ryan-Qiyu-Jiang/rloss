@@ -14,8 +14,9 @@ from utils.lr_scheduler import LR_Scheduler
 from utils.saver import Saver
 from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
+from dataloaders.utils import decode_seg_map_sequence
 
-from DenseCRFLoss import DenseCRFLoss
+from DenseCRFLossLog import DenseCRFLoss
 
 import matplotlib
 import matplotlib.cm
@@ -480,7 +481,6 @@ class Variable_Bandwidth_Model(SegModel):
         if self.hparams.densecrfloss ==0:
             loss = celoss + entropy
         else:
-            self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             probs = nn.Softmax(dim=1)(output)
             denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
             densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
@@ -546,6 +546,11 @@ class Variable_Bandwidth_Model(SegModel):
             self.writer.add_histogram('train/logit_histogram', output, iter_num)
             self.writer.add_histogram('train/probs_histogram', probs, iter_num)
             self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, iter_num)
+            flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
+                                                       dataset=self.hparams.dataset)
+            img_overlay = 0.5*image[:3].clone().cpu().data + 0.5*flat_output
+            overlay_grid = make_grid(img_overlay, 3, normalize=True)
+            self.writer.add_image('Overlay', overlay_grid, iter_num)
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), iter_num)
         self.writer.add_scalar('train/ce', celoss.item(), iter_num)
