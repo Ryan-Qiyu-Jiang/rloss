@@ -438,6 +438,21 @@ class Mutiscale_Seg_Model(SegModel):
     def training_step(self, batch, batch_idx):
         return self.get_loss(batch, batch_idx)
 
+def get_log_softmax(output):
+    logsoftmax = nn.LogSoftmax(dim=1)
+    logS = logsoftmax(output)
+    
+    part2 = torch.logsumexp(output,dim=1,keepdim=True)
+    part1 = torch.logsumexp(output[:,1:,:,:],dim=1,keepdim=True)
+    
+    for d in range(1,20):
+        newtmp = torch.cat((output[:,:d,:,:],output[:,d+1:,:,:]),dim=1)
+        newtmp2 = torch.logsumexp(newtmp,dim=1,keepdim=True)
+        part1 = torch.cat((part1,newtmp2),dim=1)
+    part1 = torch.cat((part1,torch.logsumexp(output[:,:20,:,:],dim=1,keepdim=True)),dim=1)
+    
+    log1_S = part1 - part2
+    return logS, log1_S
 
 class Variable_Bandwidth_Model(SegModel):
     def __init__(self, hparams, xy_generator=lambda a,b:100, nclass=21, num_img_tr=800):
@@ -483,7 +498,8 @@ class Variable_Bandwidth_Model(SegModel):
         else:
             probs = nn.Softmax(dim=1)(output)
             denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
+            probs, log1_S = get_log_softmax(output)
+            densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs, log1_S,croppings)
             if self.hparams.cuda:
                 densecrfloss = densecrfloss.cuda()
             loss = celoss + densecrfloss + entropy
@@ -492,9 +508,10 @@ class Variable_Bandwidth_Model(SegModel):
             """
             logits_copy = output.detach().clone().requires_grad_(True)
             probs_copy = nn.Softmax(dim=1)(logits_copy)
+            probs_copy, log1_S_copy = get_log_softmax(logits_copy)
             denormalized_image_copy = denormalized_image.detach().clone()
             croppings_copy = croppings.detach().clone()
-            densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
+            densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, log1_S_copy, croppings_copy)
 
             @torch.no_grad()
             def add_grad_map(grad, plot_name):
