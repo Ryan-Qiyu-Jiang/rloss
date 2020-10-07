@@ -576,3 +576,9 @@ class Variable_Bandwidth_Model(SegModel):
         
     def training_step(self, batch, batch_idx):
         return self.get_loss(batch, batch_idx)
+
+    def validation_step(self, batch, batch_idx):
+        pass
+    
+    def test_step(self, batch, batch_idx):
+        pass
