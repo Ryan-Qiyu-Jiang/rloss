@@ -434,3 +434,121 @@ class Mutiscale_Seg_Model(SegModel):
         
     def training_step(self, batch, batch_idx):
         return self.get_loss(batch, batch_idx)
+
+
+class Variable_Bandwidth_Model(SegModel):
+    def __init__(self, hparams, xy_generator, nclass=21, num_img_tr=800):
+        super().__init__(hparams, nclass, num_img_tr, load_model=False)
+
+        self.xy_generator = xy_generator
+        self.num_logs = 50
+        self.detailed_early = False
+
+    def forward(self, x):
+        return self.model(x)
+
+    def get_loss(self, batch, batch_idx):
+        i = batch_idx
+        epoch = self.current_epoch
+        sample = batch
+        num_img_tr = self.num_img_tr
+        image, target = sample['image'], sample['label']
+        croppings = (target!=254).float()
+        target[target==254]=255
+        num_logs = 50
+        iter_num = i + num_img_tr * epoch
+        do_log = (i % (num_img_tr // num_logs) == 0 or ((iter_num) < 100 and i%5==0))
+
+        sigma_xy = self.xy_generator(iter_num, num_img_tr*self.hparams.epochs)
+        self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, 
+                                                sigma_xy=sigma_xy, 
+                                                scale_factor=self.hparams.rloss_scale)
+
+        self.scheduler(self.optimizer, i, epoch, self.best_pred)
+        self.optimizer.zero_grad()
+
+        output = self.model(image)
+        celoss = self.criterion(output, target)
+
+        probs = nn.Softmax(dim=1)(output)
+        entropy = torch.sum(-probs*torch.log(probs))
+        self.writer.add_scalar('train/entropy', entropy.item(), iter_num)
+        entropy = self.entropy_weight
+        
+        if self.hparams.densecrfloss ==0:
+            loss = celoss + entropy
+        else:
+            self.densecrflosslayer = self.densecrflosslayer.to('cpu')
+            probs = nn.Softmax(dim=1)(output)
+            denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+            densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
+            if self.hparams.cuda:
+                densecrfloss = densecrfloss.cuda()
+            loss = celoss + densecrfloss + entropy
+
+            """All the code under here is for logging.
+            """
+            logits_copy = output.detach().clone().requires_grad_(True)
+            probs_copy = nn.Softmax(dim=1)(logits_copy)
+            denormalized_image_copy = denormalized_image.detach().clone()
+            croppings_copy = croppings.detach().clone()
+            densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
+
+            @torch.no_grad()
+            def add_grad_map(grad, plot_name):
+                if do_log:
+                    global_step = i + num_img_tr * epoch
+                    batch_grads = torch.max(torch.abs(grad), dim=1)[0].detach().cpu().numpy()
+                    color_imgs = []
+                    for grad_img in batch_grads:
+                        grad_img[0,0]=0
+                        img = colorize(grad_img)[:,:,:3]
+                        color_imgs.append(img)
+                    color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+                    grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                    self.writer.add_image(plot_name, grid_image, global_step)
+
+            def add_probs_map(grad, class_idx):
+              if do_log:
+                global_step = i + num_img_tr * epoch
+                batch_grads = grad[:,class_idx,::].detach().cpu().numpy()
+                color_imgs = []
+                for grad_img in batch_grads:
+                    grad_img[0,0]=0
+                    img = colorize(grad_img)[:,:,:3]
+                    color_imgs.append(img)
+                color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+                grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                self.writer.add_image('Grad Probs {}'.format(class_idx), grid_image, global_step)
+
+            output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+            probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+            probs.register_hook(lambda grad: add_probs_map(grad, 0)) 
+            
+            logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
+            densecrfloss_copy.backward()
+
+            self.writer.add_scalar('train/rloss', densecrfloss.item(), iter_num)
+
+        if do_log:
+            probs = nn.Softmax(dim=1)(output)
+            img_entropy = torch.sum(-probs*torch.log(probs+1e-9), dim=1).detach().cpu().numpy()
+            color_imgs = []
+            for e in img_entropy:
+                e[0,0] = 0
+                img = colorize(e)[:,:,:3]
+                color_imgs.append(img)
+            color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
+            grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+            self.writer.add_image('Entropy', grid_image, iter_num)
+            self.writer.add_histogram('train/logit_histogram', output, iter_num)
+            self.writer.add_histogram('train/probs_histogram', probs, iter_num)
+            self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
+
+        self.writer.add_scalar('train/total_loss_iter', loss.item(), iter_num)
+        self.writer.add_scalar('train/ce', celoss.item(), iter_num)
+        self.writer.add_scalar('train/ce', sigma_xy, iter_num)
+        return loss
+        
+    def training_step(self, batch, batch_idx):
+        return self.get_loss(batch, batch_idx)
