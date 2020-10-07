@@ -90,6 +90,8 @@ class SegModel(pl.LightningModule):
         self.update_loggers()
         self.lr = hparams.lr
         self.nclass = nclass
+        self.hparams.nclass = nclass
+        self.hparams.num_img_tr = num_img_tr
         self.num_img_tr = num_img_tr
         self.best_pred = 0.0
         self.logit_scale = None
@@ -437,8 +439,8 @@ class Mutiscale_Seg_Model(SegModel):
 
 
 class Variable_Bandwidth_Model(SegModel):
-    def __init__(self, hparams, xy_generator, nclass=21, num_img_tr=800):
-        super().__init__(hparams, nclass, num_img_tr, load_model=False)
+    def __init__(self, hparams, xy_generator=lambda _,_:100, nclass=21, num_img_tr=800):
+        super().__init__(hparams, nclass, num_img_tr, load_model=True)
 
         self.xy_generator = xy_generator
         self.num_logs = 50
@@ -543,11 +545,11 @@ class Variable_Bandwidth_Model(SegModel):
             self.writer.add_image('Entropy', grid_image, iter_num)
             self.writer.add_histogram('train/logit_histogram', output, iter_num)
             self.writer.add_histogram('train/probs_histogram', probs, iter_num)
-            self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
+            self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, iter_num)
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), iter_num)
         self.writer.add_scalar('train/ce', celoss.item(), iter_num)
-        self.writer.add_scalar('train/ce', sigma_xy, iter_num)
+        self.writer.add_scalar('train/sigma_xy', sigma_xy, iter_num)
         return loss
         
     def training_step(self, batch, batch_idx):
