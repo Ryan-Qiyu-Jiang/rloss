@@ -475,7 +475,7 @@ class Variable_Bandwidth_Model(SegModel):
         image, target = sample['image'], sample['label']
         croppings = (target!=254).float()
         target[target==254]=255
-        num_logs = 50
+        num_logs = self.num_logs
         iter_num = i + num_img_tr * epoch
         do_log = ((i % (num_img_tr // num_logs)) == 0 or (self.detailed_early and iter_num < 100 and (iter_num % 5) ==0 ) )
 
