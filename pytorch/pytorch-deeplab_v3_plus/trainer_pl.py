@@ -497,7 +497,8 @@ class Variable_Bandwidth_Model(SegModel):
 
         probs = nn.Softmax(dim=1)(output)
         entropy = torch.sum(-probs*torch.log(probs))
-        self.writer.add_scalar('train/entropy', entropy.item(), iter_num)
+        if do_log:
+            self.writer.add_scalar('train/entropy', entropy.item(), iter_num)
         entropy = self.entropy_weight
         
         if self.hparams.densecrfloss ==0:
@@ -553,8 +554,8 @@ class Variable_Bandwidth_Model(SegModel):
                 grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
                 self.writer.add_image('Grad Probs {}'.format(class_idx), grid_image, global_step)
 
-            output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
-            probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
+            # output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
+            # probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             probs.register_hook(lambda grad: add_probs_map(grad, 0)) 
             
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
