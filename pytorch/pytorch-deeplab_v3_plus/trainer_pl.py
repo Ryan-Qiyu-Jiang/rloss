@@ -16,7 +16,8 @@ from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
 from dataloaders.utils import decode_seg_map_sequence
 
-from DenseCRFLossLog import DenseCRFLoss
+from DenseCRFLossLog import DenseCRFLoss as DenseCRFLossLog
+from DenseCRFLoss import DenseCRFLoss
 
 import matplotlib
 import matplotlib.cm
@@ -458,6 +459,7 @@ class Variable_Bandwidth_Model(SegModel):
     def __init__(self, hparams, xy_generator=lambda a,b:100, nclass=21, num_img_tr=800):
         super().__init__(hparams, nclass, num_img_tr, load_model=True)
 
+        self.log_loss = False
         self.xy_generator = xy_generator
         self.num_logs = 50
         self.detailed_early = False
@@ -478,9 +480,14 @@ class Variable_Bandwidth_Model(SegModel):
         do_log = (i % (num_img_tr // num_logs) == 0 or ((iter_num) < 100 and i%5==0))
 
         sigma_xy = self.xy_generator(iter_num, num_img_tr*self.hparams.epochs)
-        self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, 
-                                                sigma_xy=sigma_xy, 
-                                                scale_factor=self.hparams.rloss_scale)
+        if self.log_loss:
+            self.densecrflosslayer = DenseCRFLossLog(weight=1, sigma_rgb=self.hparams.sigma_rgb, 
+                                                    sigma_xy=sigma_xy, 
+                                                    scale_factor=self.hparams.rloss_scale)
+        else:
+            self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, 
+                                                    sigma_xy=sigma_xy, 
+                                                    scale_factor=self.hparams.rloss_scale)
 
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
@@ -498,8 +505,11 @@ class Variable_Bandwidth_Model(SegModel):
         else:
             probs = nn.Softmax(dim=1)(output)
             denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            probs, log1_S = get_log_softmax(output)
-            densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs, log1_S,croppings)
+            if self.log_loss:
+                probs, log1_S = get_log_softmax(output)
+                densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,log1_S,croppings)
+            else:
+                densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
             if self.hparams.cuda:
                 densecrfloss = densecrfloss.cuda()
             loss = celoss + densecrfloss + entropy
@@ -508,10 +518,13 @@ class Variable_Bandwidth_Model(SegModel):
             """
             logits_copy = output.detach().clone().requires_grad_(True)
             probs_copy = nn.Softmax(dim=1)(logits_copy)
-            probs_copy, log1_S_copy = get_log_softmax(logits_copy)
             denormalized_image_copy = denormalized_image.detach().clone()
             croppings_copy = croppings.detach().clone()
-            densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, log1_S_copy, croppings_copy)
+            if self.log_loss:
+                probs_copy, log1_S_copy = get_log_softmax(logits_copy)
+                densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, log1_S_copy, croppings_copy)
+            else:
+                densecrfloss_copy = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image_copy, probs_copy, croppings_copy)
 
             @torch.no_grad()
             def add_grad_map(grad, plot_name):
