@@ -477,7 +477,7 @@ class Variable_Bandwidth_Model(SegModel):
         target[target==254]=255
         num_logs = 50
         iter_num = i + num_img_tr * epoch
-        do_log = (i % (num_img_tr // num_logs) == 0 or ((iter_num) < 100 and i%5==0))
+        do_log = (i % (num_img_tr // num_logs) == 0 or (self.detailed_early and iter_num < 100 and (iter_num % 5) ==0 ) )
 
         sigma_xy = self.xy_generator(iter_num, num_img_tr*self.hparams.epochs)
         if self.log_loss:
