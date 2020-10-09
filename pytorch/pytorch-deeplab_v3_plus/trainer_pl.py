@@ -456,11 +456,12 @@ def get_log_softmax(output):
     return logS, log1_S
 
 class Variable_Bandwidth_Model(SegModel):
-    def __init__(self, hparams, xy_generator=lambda a,b:100, nclass=21, num_img_tr=800):
+    def __init__(self, hparams, xy_generator=lambda a,b:100, rgb_generator=lambda a,b:15, nclass=21, num_img_tr=800):
         super().__init__(hparams, nclass, num_img_tr, load_model=True)
 
         self.log_loss = False
         self.xy_generator = xy_generator
+        self.rgb_generator = rgb_generator
         self.num_logs = 50
         self.detailed_early = False
 
@@ -480,12 +481,13 @@ class Variable_Bandwidth_Model(SegModel):
         do_log = ((i % (num_img_tr // num_logs)) == 0 or (self.detailed_early and iter_num < 100 and (iter_num % 5) ==0 ) )
 
         sigma_xy = self.xy_generator(iter_num, num_img_tr*self.hparams.epochs)
+        sigma_rgb = self.rgb_generator(iter_num, num_img_tr*self.hparams.epochs)
         if self.log_loss:
-            self.densecrflosslayer = DenseCRFLossLog(weight=1, sigma_rgb=self.hparams.sigma_rgb, 
+            self.densecrflosslayer = DenseCRFLossLog(weight=1, sigma_rgb=sigma_rgb, 
                                                     sigma_xy=sigma_xy, 
                                                     scale_factor=self.hparams.rloss_scale)
         else:
-            self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, 
+            self.densecrflosslayer = DenseCRFLoss(weight=1, sigma_rgb=sigma_rgb, 
                                                     sigma_xy=sigma_xy, 
                                                     scale_factor=self.hparams.rloss_scale)
 
