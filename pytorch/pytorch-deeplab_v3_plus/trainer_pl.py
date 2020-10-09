@@ -576,8 +576,8 @@ class Variable_Bandwidth_Model(SegModel):
             color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
             grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
             self.writer.add_image('Entropy', grid_image, iter_num)
-            self.writer.add_histogram('train/logit_histogram', output, iter_num)
-            self.writer.add_histogram('train/probs_histogram', probs, iter_num)
+            # self.writer.add_histogram('train/logit_histogram', output, iter_num)
+            # self.writer.add_histogram('train/probs_histogram', probs, iter_num)
             self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, iter_num)
             flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
                                                        dataset=self.hparams.dataset)
