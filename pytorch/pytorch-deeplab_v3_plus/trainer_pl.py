@@ -501,7 +501,7 @@ class Variable_Bandwidth_Model(SegModel):
         entropy = torch.sum(-probs*torch.log(probs))
         if do_log:
             self.writer.add_scalar('train/entropy', entropy.item(), iter_num)
-        entropy = self.entropy_weight
+        entropy = self.entropy_weight*entropy
         
         if self.hparams.densecrfloss ==0:
             loss = celoss + entropy
