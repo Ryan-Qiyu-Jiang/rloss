@@ -478,7 +478,7 @@ class Variable_Bandwidth_Model(SegModel):
         target[target==254]=255
         num_logs = self.num_logs
         iter_num = i + num_img_tr * epoch
-        do_log = ((i % (num_img_tr // num_logs)) == 0 or (self.detailed_early and iter_num < 100 and (iter_num % 5) ==0 ) )
+        do_log = ((i % (num_img_tr // num_logs)) == 0 or (self.detailed_early and iter_num < 50 and (iter_num % 1) ==0 ) )
 
         sigma_xy = self.xy_generator(iter_num, num_img_tr*self.hparams.epochs)
         sigma_rgb = self.rgb_generator(iter_num, num_img_tr*self.hparams.epochs)
@@ -501,7 +501,7 @@ class Variable_Bandwidth_Model(SegModel):
         entropy = torch.sum(-probs*torch.log(probs))
         if do_log:
             self.writer.add_scalar('train/entropy', entropy.item(), iter_num)
-        entropy = self.entropy_weight*entropy
+        entropy = *entropy
         
         if self.hparams.densecrfloss ==0:
             loss = celoss + entropy
