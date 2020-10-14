@@ -455,8 +455,10 @@ def get_log_softmax(output):
     log1_S = part1 - part2
     return logS, log1_S
 
+
+
 class Variable_Bandwidth_Model(SegModel):
-    def __init__(self, hparams, xy_generator=lambda a,b:100, rgb_generator=lambda a,b:15, nclass=21, num_img_tr=800):
+    def __init__(self, hparams=None, xy_generator=lambda a,b:100, rgb_generator=lambda a,b:15, nclass=21, num_img_tr=800):
         super().__init__(hparams, nclass, num_img_tr, load_model=True)
 
         self.log_loss = False
@@ -478,7 +480,7 @@ class Variable_Bandwidth_Model(SegModel):
         target[target==254]=255
         num_logs = self.num_logs
         iter_num = i + num_img_tr * epoch
-        do_log = ((i % (num_img_tr // num_logs)) == 0 or (self.detailed_early and iter_num < 50 and (iter_num % 1) ==0 ) )
+        do_log = ((i % (num_img_tr // num_logs)) == 0 or (self.detailed_early and iter_num < 20 and (iter_num % 1) ==0 ) )
 
         sigma_xy = self.xy_generator(iter_num, num_img_tr*self.hparams.epochs)
         sigma_rgb = self.rgb_generator(iter_num, num_img_tr*self.hparams.epochs)
