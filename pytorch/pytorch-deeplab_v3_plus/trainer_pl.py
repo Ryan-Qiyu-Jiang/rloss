@@ -315,7 +315,8 @@ class Mutiscale_Seg_Model(SegModel):
         croppings = (target!=254).float()
         target[target==254]=255
         num_logs = self.num_logs
-        do_log = (i % (num_img_tr // num_logs) == 0 or (self.detailed_early and (i + num_img_tr * epoch) < 100) and ((i+num_img_tr*epoch) % 5 ==0) )
+        iter_num = i + num_img_tr * epoch
+        do_log = ((i % (num_img_tr // num_logs)) == 0 or (self.detailed_early and (iter_num < 100) and ((iter_num % 5) ==0) ))
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         outputs = self.model.multi_forward(image)
@@ -430,6 +431,11 @@ class Mutiscale_Seg_Model(SegModel):
             self.writer.add_histogram('train/logit_histogram', output, i + num_img_tr * epoch)
             self.writer.add_histogram('train/probs_histogram', probs, i + num_img_tr * epoch)
             self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
+            flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
+                                                       dataset=self.hparams.dataset)
+            img_overlay = 0.5*image[:3].clone().cpu().data + 0.5*flat_output
+            overlay_grid = make_grid(img_overlay, 3, normalize=True)
+            self.writer.add_image('Overlay', overlay_grid, iter_num)
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
         self.writer.add_scalar('train/ce', celoss.item(), i + num_img_tr * epoch)
