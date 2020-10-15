@@ -435,7 +435,7 @@ class Mutiscale_Seg_Model(SegModel):
                                                        dataset=self.hparams.dataset)
             img_overlay = 0.5*image[:3].clone().cpu().data + 0.5*flat_output
             overlay_grid = make_grid(img_overlay, 3, normalize=True)
-            self.writer.add_image('Overlay_scale-{}'.format(output_scale), overlay_grid, iter_num)
+            self.writer.add_image('Overlay', overlay_grid, iter_num)
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
         self.writer.add_scalar('train/ce', celoss.item(), i + num_img_tr * epoch)
@@ -444,6 +444,9 @@ class Mutiscale_Seg_Model(SegModel):
         
     def training_step(self, batch, batch_idx):
         return self.get_loss(batch, batch_idx)
+
+    def validation_step(self, batch, batch_idx):
+        pass
 
 def get_log_softmax(output):
     logsoftmax = nn.LogSoftmax(dim=1)
