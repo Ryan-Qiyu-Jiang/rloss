@@ -29,9 +29,7 @@ import torch
 from argparse import Namespace
 
 import sys, os
-sys.path.append(os.path.abspath("monodepth2"))
-print(os.path.abspath("monodepth2"))
-import networks
+sys.path.append(os.path.abspath("../../../monodepth2"))
 from layers import *
 
 def colorize(value, vmin=None, vmax=None, cmap=None):
