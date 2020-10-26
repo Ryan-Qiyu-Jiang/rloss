@@ -30,6 +30,7 @@ from argparse import Namespace
 
 import sys, os
 sys.path.append(os.path.abspath("monodepth2"))
+print(os.path.abspath("monodepth2"))
 import networks
 from layers import *
 
