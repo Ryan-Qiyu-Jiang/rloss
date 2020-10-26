@@ -31,6 +31,7 @@ from argparse import Namespace
 import sys, os
 sys.path.append(os.path.abspath("../../../monodepth2"))
 from layers import *
+import networks
 
 def colorize(value, vmin=None, vmax=None, cmap=None):
     vmin = value.min() if vmin is None else vmin
@@ -619,9 +620,9 @@ class UNet_Model(SegModel):
         super().__init__(hparams, nclass, num_img_tr, load_model=False)
         self.scales = scales
         self.encoder = networks.ResnetEncoder(18, False)
-        self.decoder = DepthDecoder(
+        self.decoder = networks.DepthDecoder(
             num_ch_enc=self.encoder.num_ch_enc, scales=range(5),
-            num_output_channels=nclass)
+            num_output_channels=nclass, use_sigmoid=False)
 
         self.CRFLoss = {scale:DenseCRFLoss(weight=1, sigma_rgb=self.hparams.sigma_rgb, sigma_xy=sigma_xy[i], scale_factor=self.hparams.rloss_scale) for i, scale in enumerate(self.scales)}
         self.num_logs = 50
