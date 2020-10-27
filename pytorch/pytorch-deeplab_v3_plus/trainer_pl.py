@@ -616,11 +616,12 @@ class Variable_Bandwidth_Model(SegModel):
         pass
 
 class UNet_Model(SegModel):
-    def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25], sigma_xy=[25, 25, 25]):
+    def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25], sigma_xy=[25, 25, 25], debug=False):
         super().__init__(hparams, nclass, num_img_tr, load_model=False)
         self.scales = scales
         self.encoder = networks.ResnetEncoder(18, False)
-        self.decoder = networks.DepthDecoder(
+        Decoder = networks.DebugDepthDecoder if debug else networks.DepthDecoder
+        self.decoder = Decoder(
             num_ch_enc=self.encoder.num_ch_enc, scales=range(5),
             num_output_channels=nclass, use_sigmoid=False)
 
@@ -654,7 +655,7 @@ class UNet_Model(SegModel):
         self.optimizer.zero_grad()
         outputs = self.forward(image)
         names = [1.0, 0.5, 0.25, 0.125, 0.0625]
-        outputs = {names[key[1]]:val for key, val in outputs.items()}
+        outputs = {names[key[1]]:val for key, val in outputs.items() if 'debug' not in key[0]}
         scaled_outputs = {scale : F.interpolate(y, size=image.size()[2:], mode='bilinear', align_corners=True) for scale, y in outputs.items()}
         
         scale_celoss = [self.criterion(scaled_outputs[scale], target) for scale in scaled_outputs.keys() if scale==1.0]
