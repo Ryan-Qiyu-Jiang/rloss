@@ -617,7 +617,7 @@ class Variable_Bandwidth_Model(SegModel):
 
 class UNet_Model(SegModel):
     def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25], sigma_xy=[25, 25, 25], debug=False, load_model=False):
-        super().__init__(hparams, nclass, num_img_tr, load_model=load_model)
+        super().__init__(hparams, nclass, num_img_tr, load_model=False)
         self.scales = scales
         self.encoder = networks.ResnetEncoder(18, load_model)
         Decoder = networks.DebugDepthDecoder if debug else networks.DepthDecoder
