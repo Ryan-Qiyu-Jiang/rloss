@@ -658,7 +658,7 @@ class UNet_Model(SegModel):
         outputs = {names[key[1]]:val for key, val in outputs.items() if 'debug' not in key[0]}
         scaled_outputs = {scale : F.interpolate(y, size=image.size()[2:], mode='bilinear', align_corners=True) for scale, y in outputs.items()}
         
-        scale_celoss = [self.criterion(scaled_outputs[scale], target) for scale in scaled_outputs.keys()]
+        scale_celoss = [self.criterion(scaled_outputs[scale], target)*self.hparams.rloss_weights[str(scale)] for scale in scaled_outputs.keys()]
         celoss = sum(scale_celoss)
         
         scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in scaled_outputs.items()}
