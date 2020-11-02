@@ -103,6 +103,7 @@ class SegModel(pl.LightningModule):
         self.best_pred = 0.0
         self.logit_scale = None
         self.entropy_weight = 2e-9
+        self.evaluator = Evaluator(self.nclass)
         kwargs = {'num_workers': hparams.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(self.hparams, **kwargs)
         if load_model:
@@ -166,7 +167,6 @@ class SegModel(pl.LightningModule):
         if self.hparams.densecrfloss == 0:
             loss = celoss
         else:
-            self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             max_output = (max(torch.abs(torch.max(output)), 
                                 torch.abs(torch.min(output))))
             probs = nn.Softmax(dim=1)(output) # /max_output*4
@@ -175,6 +175,8 @@ class SegModel(pl.LightningModule):
             if self.hparams.cuda:
                 densecrfloss = densecrfloss.cuda()
             loss = celoss + densecrfloss
+
+        
 
         self.writer.add_scalar('val/total_loss_iter', loss.item(), i + num_img_tr * epoch)
         return loss
@@ -291,6 +293,42 @@ class SegModel(pl.LightningModule):
     
     def test_step(self, batch, batch_idx):
         return self.get_loss_val(batch, batch_idx)
+
+    def validation(self, val_loader, epoch=0):
+        self.model.eval()
+        self.evaluator.reset()
+        tbar = tqdm(val_loader, desc='\r')
+        test_loss = 0.0
+        for i, sample in enumerate(tbar):
+            image, target = sample['image'], sample['label']
+            target[target==254]=255
+            if self.args.cuda:
+                image, target = image.cuda(), target.cuda()
+            with torch.no_grad():
+                output = self.model(image)
+            loss = self.criterion(output, target)
+            test_loss += loss.item()
+            tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
+            pred = output.data.cpu().numpy()
+            target = target.cpu().numpy()
+            pred = np.argmax(pred, axis=1)
+            # Add batch sample into evaluator
+            self.evaluator.add_batch(target, pred)
+
+        # Fast test during the training
+        Acc = self.evaluator.Pixel_Accuracy()
+        Acc_class = self.evaluator.Pixel_Accuracy_Class()
+        mIoU = self.evaluator.Mean_Intersection_over_Union()
+        FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
+        self.writer.add_scalar('val/total_loss_epoch', test_loss, epoch)
+        self.writer.add_scalar('val/mIoU', mIoU, epoch)
+        self.writer.add_scalar('val/Acc', Acc, epoch)
+        self.writer.add_scalar('val/Acc_class', Acc_class, epoch)
+        self.writer.add_scalar('val/fwIoU', FWIoU, epoch)
+        print('Validation:')
+        print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
+        print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        print('Loss: %.3f' % test_loss)
 
 # cd rloss && git add . && git commit -m "f" && git push origin master && cd .. && git add . && git commit -m "f" && git push --recurse-submodules=on-demand
 class Mutiscale_Seg_Model(SegModel):
