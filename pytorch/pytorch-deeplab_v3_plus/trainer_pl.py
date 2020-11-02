@@ -280,6 +280,11 @@ class SegModel(pl.LightningModule):
             self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
             self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
             self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
+            flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
+                                                       dataset=self.hparams.dataset)
+            img_overlay = 0.5*image[:3].clone().cpu().data + 0.5*flat_output
+            overlay_grid = make_grid(img_overlay, 3, normalize=True)
+            self.writer.add_image('Overlay', overlay_grid, i + num_img_tr * epoch)
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
         self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
