@@ -302,7 +302,7 @@ class SegModel(pl.LightningModule):
         for i, sample in enumerate(tbar):
             image, target = sample['image'], sample['label']
             target[target==254]=255
-            if self.args.cuda:
+            if image.is_cuda:
                 image, target = image.cuda(), target.cuda()
             with torch.no_grad():
                 output = self.model(image)
