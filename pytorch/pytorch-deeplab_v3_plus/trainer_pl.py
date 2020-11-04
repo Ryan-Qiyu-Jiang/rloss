@@ -282,7 +282,7 @@ class SegModel(pl.LightningModule):
             self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
             flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
                                                        dataset=self.hparams.dataset)
-            img_overlay = 0.5*image[:3].clone().cpu().data + 0.5*flat_output
+            img_overlay = 0.3*image[:3].clone().cpu().data + 0.7*flat_output
             overlay_grid = make_grid(img_overlay, 3, normalize=True)
             self.writer.add_image('Overlay', overlay_grid, i + num_img_tr * epoch)
 
@@ -480,7 +480,7 @@ class Mutiscale_Seg_Model(SegModel):
             self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
             flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
                                                        dataset=self.hparams.dataset)
-            img_overlay = 0.5*image[:3].clone().cpu().data + 0.5*flat_output
+            img_overlay = 0.3*image[:3].clone().cpu().data + 0.7*flat_output
             overlay_grid = make_grid(img_overlay, 3, normalize=True)
             self.writer.add_image('Overlay', overlay_grid, iter_num)
 
