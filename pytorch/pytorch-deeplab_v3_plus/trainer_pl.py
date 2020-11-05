@@ -386,7 +386,7 @@ class Mutiscale_Seg_Model(SegModel):
             scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
             entropy = self.entropy_weight*sum(scale_entropy)
         else:
-            entropy = torch.zeros(1)
+            entropy = 0
 
         if self.hparams.densecrfloss==0:
             loss = celoss + entropy
@@ -498,7 +498,7 @@ class Mutiscale_Seg_Model(SegModel):
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
         self.writer.add_scalar('train/ce', celoss.item(), i + num_img_tr * epoch)
-        self.writer.add_scalar('train/entropy', entropy.item(), i + num_img_tr * epoch)
+        self.writer.add_scalar('train/entropy', if isinstance(entropy, int) entropy else entropy.item(), i + num_img_tr * epoch)
         return loss
         
     def training_step(self, batch, batch_idx):
