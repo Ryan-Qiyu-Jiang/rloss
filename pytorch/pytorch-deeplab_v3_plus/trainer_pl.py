@@ -293,7 +293,7 @@ class SegModel(pl.LightningModule):
                 color_imgs.append(img)
             color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
             grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
-            self.writer.add_image('Background Softmax', bg_imgs, global_step)
+            self.writer.add_image('Background Softmax', grid_image, global_step)
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
         self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
