@@ -498,7 +498,7 @@ class Mutiscale_Seg_Model(SegModel):
 
         self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
         self.writer.add_scalar('train/ce', celoss.item(), i + num_img_tr * epoch)
-        self.writer.add_scalar('train/entropy', if isinstance(entropy, int) entropy else entropy.item(), i + num_img_tr * epoch)
+        self.writer.add_scalar('train/entropy', entropy if isinstance(entropy, int) else entropy.item(), i + num_img_tr * epoch)
         return loss
         
     def training_step(self, batch, batch_idx):
