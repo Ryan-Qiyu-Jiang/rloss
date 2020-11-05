@@ -386,7 +386,7 @@ class Mutiscale_Seg_Model(SegModel):
             scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
             entropy = self.entropy_weight*sum(scale_entropy)
         else:
-            entropy = 0
+            entropy = torch.zeros(1)
 
         if self.hparams.densecrfloss==0:
             loss = celoss + entropy
