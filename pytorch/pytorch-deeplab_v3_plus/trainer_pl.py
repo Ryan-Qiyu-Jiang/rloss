@@ -381,9 +381,12 @@ class Mutiscale_Seg_Model(SegModel):
         scale_celoss = [self.criterion(scaled_outputs[scale], target) for scale in self.model.scales]
         celoss = sum(scale_celoss)
         
-        scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in scaled_outputs.items()}
-        scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
-        entropy = self.entropy_weight*sum(scale_entropy)
+        if self.entropy_weight != 0:
+            scale_probs = {scale:nn.Softmax(dim=1)(y) for scale, y in scaled_outputs.items()}
+            scale_entropy = [torch.sum(-p*torch.log(p+1e-9)) for p in scale_probs.values()]
+            entropy = self.entropy_weight*sum(scale_entropy)
+        else:
+            entropy = 0
 
         if self.hparams.densecrfloss==0:
             loss = celoss + entropy
