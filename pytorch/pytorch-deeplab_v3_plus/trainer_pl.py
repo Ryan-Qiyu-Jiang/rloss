@@ -285,7 +285,7 @@ class SegModel(pl.LightningModule):
             img_overlay = 0.3*image[:3].clone().cpu().data + 0.7*flat_output
             overlay_grid = make_grid(img_overlay, 3, normalize=True)
             self.writer.add_image('Overlay', overlay_grid, i + num_img_tr * epoch)
-            bg = probs[:,0,::]
+            bg = probs[:,0,::].detach().cpu().numpy()
             bg_imgs = []
             for e in bg:
                 e[0,0] = 0
