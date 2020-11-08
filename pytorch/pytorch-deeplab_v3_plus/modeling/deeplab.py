@@ -60,6 +60,20 @@ class DeepLab(nn.Module):
                         if p.requires_grad:
                             yield p
 
+class Simple_Encoder(DeepLab):
+    def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
+                 sync_bn=True, freeze_bn=False):
+        super(Simple_Encoder, self).__init__(backbone, output_stride, num_classes, sync_bn, freeze_bn)
+
+    def forward(self, input):
+        x, low_level_feat = self.backbone(input)
+        # x = self.aspp(x)
+        x = self.decoder(x, low_level_feat)
+        x = F.interpolate(x, size=input.size()[2:], mode='bilinear', align_corners=True)
+
+        return x
+
+
 class DeepLab_Multiscale(DeepLab):
     def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
                  sync_bn=True, freeze_bn=False, scales=[1.0, 0.5, 0.25]):
