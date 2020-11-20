@@ -837,3 +837,87 @@ class UNet_Model(SegModel):
 
     def validation_step(self, batch, batch_idx):
         pass
+
+
+class SimpleEncoder(DeepLab):
+    def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
+                 sync_bn=True, freeze_bn=False):
+        super(SimpleEncoder, self).__init__(backbone, output_stride, num_classes, sync_bn, freeze_bn)
+        self.aspp = None
+        self.decoder = None
+        BatchNorm = nn.BatchNorm2d
+        self.last_conv = nn.Sequential(nn.Conv2d(344, 256, kernel_size=3, stride=1, padding=1, bias=False),
+                                        BatchNorm(256),
+                                        nn.ReLU(),
+                                        nn.Dropout(0.5),
+                                        nn.Conv2d(256, num_classes, kernel_size=1, stride=1))
+
+    def forward(self, input):
+        x, low_level_feat = self.backbone(input)
+        x = F.interpolate(x, size=low_level_feat.size()[2:], mode='bilinear', align_corners=True)
+        x = torch.cat((x, low_level_feat), dim=1)
+        # x = self.decoder(x, low_level_feat)
+        x = self.last_conv(x)
+        x = F.interpolate(x, size=input.size()[2:], mode='bilinear', align_corners=True)
+        return x
+
+    def get_10x_lr_params(self):
+        modules = [self.last_conv]
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                        or isinstance(m[1], nn.BatchNorm2d):
+                    for p in m[1].parameters():
+                        if p.requires_grad:
+                            yield p
+
+
+class SimpleDecoder(SegModel):
+    def __init__(self, hparams, nclass=21, num_img_tr=800, load_model=True):
+        super().__init__(hparams, nclass, num_img_tr, load_model=True)
+        self.hparams.A = torch.randn(304, 344).cuda()/304**0.5
+        self.decoder_loss = True
+        
+    def get_simple_decoder_loss(self, batch, batch_idx):
+        i = batch_idx
+        epoch = self.current_epoch
+        sample = batch
+        num_img_tr = self.num_img_tr
+        global_step = i + num_img_tr * epoch
+        image, target = sample['image'], sample['label']
+        croppings = (target!=254).float()
+        target[target==254]=255
+        num_logs = 50
+        do_log = (i % (num_img_tr // num_logs) == 0 or ((i + num_img_tr * epoch) < 100 and i%5==0))
+        self.scheduler(self.optimizer, i, epoch, self.best_pred)
+        self.optimizer.zero_grad()
+        encoder_x, encoder_low_level_feat = self.model.backbone(image)
+        x = self.model.aspp(encoder_x)
+        low_level_feat = self.model.decoder.conv1(encoder_low_level_feat)
+        low_level_feat = self.model.decoder.bn1(low_level_feat)
+        low_level_feat = self.model.decoder.relu(low_level_feat)
+
+        x = F.interpolate(x, size=low_level_feat.size()[2:], mode='bilinear', align_corners=True)
+        y_hat = torch.cat((x, low_level_feat), dim=1)
+
+        encoder_x = F.interpolate(encoder_x, size=encoder_low_level_feat.size()[2:], mode='bilinear', align_corners=True)
+        y = torch.cat((encoder_x, encoder_low_level_feat), dim=1)
+
+        s = y_hat.shape
+        y_hat = y_hat.view(s[0], s[1], s[2]*s[3])
+        s = y.shape
+        y = y.view(s[0], s[1], s[2]*s[3])
+
+        y_projects = [torch.matmul(self.hparams.A, features).unsqueeze(0) for features in y]
+        y_project = torch.cat(y_projects, dim=0)
+
+        l2_criterion = nn.MSELoss()
+        l2_loss = l2_criterion(y_hat, y_project)
+        
+        self.log('train/mse', l2_loss.item())
+        return l2_loss
+
+    def training_step(self, batch, batch_idx):
+        if self.decoder_loss:
+          return self.get_simple_decoder_loss(batch, batch_idx)
+        return self.get_loss(batch, batch_idx)
