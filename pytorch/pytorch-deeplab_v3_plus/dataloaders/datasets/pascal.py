@@ -17,6 +17,7 @@ class VOCSegmentation(Dataset):
                  args,
                  base_dir=Path.db_root_dir('pascal'),
                  split='train',
+                 full_gt=False
                  ):
         """
         :param base_dir: path to VOC dataset directory
@@ -28,9 +29,11 @@ class VOCSegmentation(Dataset):
         self._image_dir = os.path.join(self._base_dir, 'JPEGImages')
         if split == 'train':
             # full supervision
-            #self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
-            # weak supervision with scribbles
-            self._cat_dir = os.path.join(self._base_dir, 'pascal_2012_scribble')
+            if full_gt:
+                self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
+            else:
+                # weak supervision with scribbles
+                self._cat_dir = os.path.join(self._base_dir, 'pascal_2012_scribble')
         elif split == 'val':
             self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
         #self._cat_dir = os.path.join(self._base_dir, 'pascal_2012_scribble_val_full')

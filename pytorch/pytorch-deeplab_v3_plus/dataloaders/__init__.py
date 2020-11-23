@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 def make_data_loader(args, **kwargs):
 
     if args.dataset == 'pascal':
-        train_set = pascal.VOCSegmentation(args, split='train')
+        train_set = pascal.VOCSegmentation(args, split='train', full_gt=args.full_gt)
         val_set = pascal.VOCSegmentation(args, split='val')
         if args.use_sbd:
             sbd_train = sbd.SBDSegmentation(args, split=['train', 'val'])
