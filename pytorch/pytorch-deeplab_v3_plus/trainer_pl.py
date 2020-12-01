@@ -33,6 +33,8 @@ sys.path.append(os.path.abspath("../../../monodepth2"))
 from layers import *
 import networks
 
+import wandb
+
 def colorize(value, vmin=None, vmax=None, cmap=None):
     vmin = value.min() if vmin is None else vmin
     vmax = value.max() if vmax is None else vmax
