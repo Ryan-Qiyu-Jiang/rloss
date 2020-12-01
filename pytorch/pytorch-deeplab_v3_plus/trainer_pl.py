@@ -84,6 +84,23 @@ def get_args():
             'weight_decay': 0.0005,
             'workers': 6}
 
+segmentation_classes = [
+    'background','aeroplane','bicycle','bird','boat','bottle',
+    'bus','car','cat','chair','cow','diningtable','dog','horse',
+    'motorbike','person','pottedplant','sheep','sofa','train','tvmonitor'
+]
+
+def labels():
+  l = {}
+  for i, label in enumerate(segmentation_classes):
+    l[i] = label
+  return l
+
+def wb_mask(bg_img, pred_mask, true_mask):
+  return wandb.Image(bg_img, masks={
+    "prediction" : {"mask_data" : pred_mask, "class_labels" : labels()},
+    "ground truth" : {"mask_data" : true_mask, "class_labels" : labels()}})
+
 class SegModel(pl.LightningModule):
     def __init__(self, hparams, nclass=21, num_img_tr=800, load_model=True):
         super().__init__()
@@ -103,6 +120,8 @@ class SegModel(pl.LightningModule):
         self.best_pred = 0.0
         self.logit_scale = None
         self.entropy_weight = 2e-9
+        self.log_counter = 0
+        self.val_img_logs = []
         self.evaluator = Evaluator(self.nclass)
         kwargs = {'num_workers': hparams.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(self.hparams, **kwargs)
@@ -131,6 +150,11 @@ class SegModel(pl.LightningModule):
         if self.hparams.ft:
             self.hparams.start_epoch = 0
 
+        self.save_hyperparameters()
+
+    def log(self, name, value):
+      self.logger.experiment.log({name : value})
+
     def update_loggers(self):
         self.saver = Saver(self.hparams)
         self.saver.save_experiment_config()
@@ -151,46 +175,70 @@ class SegModel(pl.LightningModule):
         return self.optimizer #[self.optimizer], [self.scheduler]
 
     def get_loss_val(self, batch, batch_idx):
-        i = batch_idx
-        epoch = self.current_epoch
-        sample = batch
-        num_img_tr = self.num_img_tr
-        image, target = sample['image'], sample['label']
+        image, target = batch['image'], batch['label']
+        # global_step = batch_idx + self.num_img_tr * self.val_counter
         croppings = (target!=254).float()
         target[target==254]=255
 
-        self.scheduler(self.optimizer, i, epoch, self.best_pred)
-        self.optimizer.zero_grad()
         output = self.model(image)
         celoss = self.criterion(output, target)
-        
-        if self.hparams.densecrfloss == 0:
-            loss = celoss
-        else:
-            max_output = (max(torch.abs(torch.max(output)), 
-                                torch.abs(torch.min(output))))
-            probs = nn.Softmax(dim=1)(output) # /max_output*4
-            denormalized_image = denormalizeimage(sample['image'], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            densecrfloss = self.hparams.densecrfloss*self.densecrflosslayer(denormalized_image,probs,croppings)
-            if self.hparams.cuda:
-                densecrfloss = densecrfloss.cuda()
-            loss = celoss + densecrfloss
 
-        
+        flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
+                                                    dataset=self.hparams.dataset)
+        # self.logger.experiment.log({'val/Image-output-target':[wandb.Image(image[0]), wandb.Image(flat_output[0]), wandb.Image(target[0])] }, commit=False)
+        # img_overlay = 0.3*image[:3].clone().cpu().data + 0.7*flat_output
+        # self.logger.experiment.log({'val/Overlay':wandb.Image(img_overlay)}, commit=False)
+        mask = torch.max(output[:1],1)[1].detach()
+        self.val_img_logs += [wb_mask(image[0].cpu().numpy().transpose([1,2,0]), mask[0].cpu().numpy(), target[0].cpu().numpy())]
 
-        self.writer.add_scalar('val/total_loss_iter', loss.item(), i + num_img_tr * epoch)
-        return loss
+        pred = output.data.cpu().numpy()
+        pred = np.argmax(pred, axis=1)
+        target = target.cpu().numpy()
+        self.evaluator.add_batch(target, pred)
+        result = {
+          'ce_loss': celoss
+        }
+        return result
+
+    def validation_summary(self, outputs):
+      test_loss = 0.0
+      masks = self.val_img_logs
+      self.val_img_logs = []
+      print(len(masks))
+      for output in outputs:
+        test_loss += output['ce_loss']
+
+      # Fast test during the training
+      Acc = self.evaluator.Pixel_Accuracy()
+      Acc_class = self.evaluator.Pixel_Accuracy_Class()
+      mIoU = self.evaluator.Mean_Intersection_over_Union()
+      FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
+      if len(masks)>10:
+        self.logger.experiment.log({'val/Examples':masks[:50]}, commit=False)
+      self.logger.experiment.log({'val/mIoU': mIoU}, commit=False)
+      self.logger.experiment.log({'val/Acc': Acc}, commit=False)
+      self.logger.experiment.log({'val/Acc_class': Acc_class}, commit=False)
+      self.logger.experiment.log({'val/fwIoU': FWIoU}, commit=False)
+      self.logger.experiment.log({'val/loss_epoch': test_loss.item()})
+      print('Validation:')
+      print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+      print('Loss: %.3f' % test_loss)
+      self.evaluator.reset()
+
+    def validation_epoch_end(self, validation_step_outputs):
+      self.validation_summary(validation_step_outputs)
 
     def get_loss(self, batch, batch_idx):
         i = batch_idx
         epoch = self.current_epoch
         sample = batch
         num_img_tr = self.num_img_tr
+        global_step = i + num_img_tr * epoch
         image, target = sample['image'], sample['label']
         croppings = (target!=254).float()
         target[target==254]=255
         num_logs = 50
-        do_log = (i % (num_img_tr // num_logs) == 0 or ((i + num_img_tr * epoch) < 100 and i%5==0))
+        do_log = i%50==0 #(i % (num_img_tr // num_logs) == 0 or (self.detailed_early and (i + num_img_tr * epoch) < 100 and (i%5)==0))
         self.scheduler(self.optimizer, i, epoch, self.best_pred)
         self.optimizer.zero_grad()
         output = self.model(image)
@@ -200,7 +248,7 @@ class SegModel(pl.LightningModule):
             probs = nn.Softmax(dim=1)(output)
             entropy = torch.sum(-probs*torch.log(probs+1e-9))
             loss = celoss + self.entropy_weight*entropy
-            self.writer.add_scalar('train/total_loss_iter/entropy', entropy.item(), i + num_img_tr * epoch)
+            self.logger.experiment.log({'train/entropy': entropy.item()}, commit=False)
         else:
             self.densecrflosslayer = self.densecrflosslayer.to('cpu')
             max_output = (max(torch.abs(torch.max(output)), 
@@ -237,8 +285,9 @@ class SegModel(pl.LightningModule):
                         img = colorize(grad_img)[:,:,:3]
                         color_imgs.append(img)
                     color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
-                    grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
-                    self.writer.add_image(plot_name, grid_image, global_step)
+                    # grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                    self.logger.experiment.log({plot_name:wandb.Image(color_imgs[:3])}, commit=False) 
+                    # self.writer.add_image(plot_name, grid_image, global_step)
 
             def add_probs_map(grad, class_idx):
               if do_log:
@@ -250,20 +299,17 @@ class SegModel(pl.LightningModule):
                     img = colorize(grad_img)[:,:,:3]
                     color_imgs.append(img)
                 color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
-                grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
-                self.writer.add_image('Grad Probs {}'.format(class_idx), grid_image, global_step)
+                # grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
+                self.logger.experiment.log({'Grad Probs {}'.format(class_idx) : wandb.Image(color_imgs[:3])}, commit=False)
+                # self.writer.add_image('Grad Probs {}'.format(class_idx), grid_image, global_step)
 
             output.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits')) 
             probs.register_hook(lambda grad: add_grad_map(grad, 'Grad Probs')) 
             probs.register_hook(lambda grad: add_probs_map(grad, 0)) 
-            # probs.register_hook(lambda grad: add_probs_map(grad, 12))
             
             logits_copy.register_hook(lambda grad: add_grad_map(grad, 'Grad Logits Rloss')) 
             densecrfloss_copy.backward()
-
-            self.writer.add_scalar('train/total_loss_iter/rloss', densecrfloss.item(), i + num_img_tr * epoch)
-            self.writer.add_scalar('train/total_loss_iter/max_output', max_output.item(), i + num_img_tr * epoch)
-            self.writer.add_scalar('train/total_loss_iter/mean_output', mean_output, i + num_img_tr * epoch)
+            self.logger.experiment.log({'train/rloss': densecrfloss.item()}, commit=False)
 
         if do_log:
             global_step = i + num_img_tr * epoch
@@ -275,16 +321,17 @@ class SegModel(pl.LightningModule):
                 img = colorize(e)[:,:,:3]
                 color_imgs.append(img)
             color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
-            grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
-            self.writer.add_image('Entropy', grid_image, global_step)
-            # self.writer.add_histogram('train/total_loss_iter/logit_histogram', output, i + num_img_tr * epoch)
-            # self.writer.add_histogram('train/total_loss_iter/probs_histogram', probs, i + num_img_tr * epoch)
-            self.summary.visualize_image(self.writer, self.hparams.dataset, image, target, output, global_step)
             flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
                                                        dataset=self.hparams.dataset)
             img_overlay = 0.3*image[:3].clone().cpu().data + 0.7*flat_output
-            overlay_grid = make_grid(img_overlay, 3, normalize=True)
-            self.writer.add_image('Overlay', overlay_grid, i + num_img_tr * epoch)
+
+            self.logger.experiment.log({'Entropy':wandb.Image(color_imgs[:3])}, commit=False)
+            flat_output = decode_seg_map_sequence(torch.max(output[:3], 1)[1].detach().cpu().numpy(),
+                                                       dataset=self.hparams.dataset)
+            self.logger.experiment.log({'Image-output-target':[wandb.Image(image[0]), wandb.Image(flat_output[0]), wandb.Image(target[0])]}, commit=False)
+            img_overlay = 0.3*image[:3].clone().cpu().data + 0.7*flat_output
+            # overlay_grid = make_grid(img_overlay, 3, normalize=True)
+            self.logger.experiment.log({'Overlay':wandb.Image(img_overlay)}, commit=False)
             bg_probs = probs[:,0,::].detach().cpu().numpy()
             color_imgs = []
             for prob_img in bg_probs:
@@ -293,10 +340,10 @@ class SegModel(pl.LightningModule):
                 color_imgs.append(img)
             color_imgs = torch.from_numpy(np.array(color_imgs).transpose([0, 3, 1, 2]))
             grid_image = make_grid(color_imgs[:3], 3, normalize=False, range=(0, 255))
-            self.writer.add_image('Background Softmax', grid_image, global_step)
+            self.logger.experiment.log({'Background Softmax':wandb.Image(color_imgs[:3])}, commit=False)
 
-        self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
-        self.writer.add_scalar('train/total_loss_iter/ce', celoss.item(), i + num_img_tr * epoch)
+        self.logger.experiment.log({'train/ce': celoss.item()}, commit=False)
+        self.logger.experiment.log({'train/total_loss': loss.item()})
         return loss
         
     def training_step(self, batch, batch_idx):
@@ -334,11 +381,11 @@ class SegModel(pl.LightningModule):
         Acc_class = self.evaluator.Pixel_Accuracy_Class()
         mIoU = self.evaluator.Mean_Intersection_over_Union()
         FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
-        self.writer.add_scalar('val/total_loss_epoch', test_loss, epoch)
-        self.writer.add_scalar('val/mIoU', mIoU, epoch)
-        self.writer.add_scalar('val/Acc', Acc, epoch)
-        self.writer.add_scalar('val/Acc_class', Acc_class, epoch)
-        self.writer.add_scalar('val/fwIoU', FWIoU, epoch)
+        self.log('val/total_loss_epoch', test_loss)
+        self.log('val/mIoU', mIoU)
+        self.log('val/Acc', Acc)
+        self.log('val/Acc_class', Acc_class)
+        self.log('val/fwIoU', FWIoU)
         print('Validation:')
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
         print('Loss: %.3f' % test_loss)
@@ -921,3 +968,41 @@ class SimpleDecoder(SegModel):
         if self.decoder_loss:
           return self.get_simple_decoder_loss(batch, batch_idx)
         return self.get_loss(batch, batch_idx)
+
+class RandProjEncoder(DeepLab):
+    def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
+                 sync_bn=True, freeze_bn=False):
+        super(RandProjEncoder, self).__init__(backbone, output_stride, num_classes, sync_bn, freeze_bn)
+        self.aspp = None
+        self.decoder = None
+        self.A = torch.randn(304, 344).cuda()/304**0.5
+        BatchNorm = nn.BatchNorm2d
+        self.last_conv = nn.Sequential(nn.Conv2d(304, 256, kernel_size=3, stride=1, padding=1, bias=False),
+                                        BatchNorm(256),
+                                        nn.ReLU(),
+                                        nn.Dropout(0.5),
+                                        nn.Conv2d(256, num_classes, kernel_size=1, stride=1))
+
+    def forward(self, input):
+        x, low_level_feat = self.backbone(input)
+        x = F.interpolate(x, size=low_level_feat.size()[2:], mode='bilinear', align_corners=True)
+        x = torch.cat((x, low_level_feat), dim=1)
+        s = x.shape
+        x = x.view(s[0], s[1], s[2]*s[3])
+        projections = [torch.matmul(self.A, features).unsqueeze(0) for features in x]
+        x = torch.cat(projections, dim=0)
+        x = x.view(s[0], self.A.shape[0], s[2], s[3])
+        # x = self.decoder(x, low_level_feat)
+        x = self.last_conv(x)
+        x = F.interpolate(x, size=input.size()[2:], mode='bilinear', align_corners=True)
+        return x
+
+    def get_10x_lr_params(self):
+        modules = [self.last_conv]
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                        or isinstance(m[1], nn.BatchNorm2d):
+                    for p in m[1].parameters():
+                        if p.requires_grad:
+                            yield p

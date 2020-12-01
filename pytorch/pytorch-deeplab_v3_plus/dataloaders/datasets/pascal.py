@@ -70,9 +70,10 @@ class VOCSegmentation(Dataset):
         assert (len(self.images) == len(self.categories))
         if args.limit_dataset:
             num_samples = int(len(self.images) * args.limit_dataset)
-            self.im_ids = random.sample(self.im_ids, num_samples) # self.im_ids[:num_samples]
-            self.images = random.sample(self.images, num_samples) #self.images[:num_samples]
-            self.categories = random.sample(self.categories, num_samples) #self.categories[:num_samples]
+            self.im_ids, self.images, self.categories = zip(*random.sample(list(zip(self.im_ids, self.images, self.categories)), num_samples))
+            # self.im_ids = random.sample(self.im_ids, num_samples) # self.im_ids[:num_samples]
+            # self.images = random.sample(self.images, num_samples) #self.images[:num_samples]
+            # self.categories = random.sample(self.categories, num_samples) #self.categories[:num_samples]
 
         # Display stats
         print('Number of images in {}: {:d}'.format(split, len(self.images)))
