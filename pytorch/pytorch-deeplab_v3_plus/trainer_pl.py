@@ -718,6 +718,24 @@ class Variable_Bandwidth_Model(SegModel):
     def test_step(self, batch, batch_idx):
         pass
 
+class UNet(nn.Module):
+    def __init__(self, nclass=21, load_model=True, scales=range(5), debug=False):
+        super(UNet, self).__init__()
+        self.scales = scales
+        self.encoder = networks.ResnetEncoder(18, load_model)
+        Decoder = networks.DebugDepthDecoder if debug else networks.DepthDecoder
+        self.decoder = Decoder(
+            num_ch_enc=self.encoder.num_ch_enc, scales=scales,
+            num_output_channels=nclass, use_sigmoid=False)
+
+    def forward(self, input):
+        features = self.encoder(input)
+        output = self.decoder(features)[('disp', 0)]
+        output = F.interpolate(output, size=input.size()[2:], mode='bilinear', align_corners=True)
+
+        return output
+
+
 class UNet_Model(SegModel):
     def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25], sigma_xy=[25, 25, 25], debug=False, load_model=False):
         super().__init__(hparams, nclass, num_img_tr, load_model=False)
