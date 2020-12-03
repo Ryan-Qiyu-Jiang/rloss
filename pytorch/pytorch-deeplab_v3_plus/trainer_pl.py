@@ -725,7 +725,7 @@ class UNet(nn.Module):
         self.backbone = networks.ResnetEncoder(18, load_model)
         Decoder = networks.DebugDepthDecoder if debug else networks.DepthDecoder
         self.decoder = Decoder(
-            num_ch_enc=self.encoder.num_ch_enc, scales=scales,
+            num_ch_enc=self.backbone.num_ch_enc, scales=scales,
             num_output_channels=nclass, use_sigmoid=False)
 
     def forward(self, input):
