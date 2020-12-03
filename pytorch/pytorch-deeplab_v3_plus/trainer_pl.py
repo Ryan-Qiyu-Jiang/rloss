@@ -722,14 +722,14 @@ class UNet(nn.Module):
     def __init__(self, nclass=21, load_model=True, scales=range(5), debug=False):
         super(UNet, self).__init__()
         self.scales = scales
-        self.encoder = networks.ResnetEncoder(18, load_model)
+        self.backbone = networks.ResnetEncoder(18, load_model)
         Decoder = networks.DebugDepthDecoder if debug else networks.DepthDecoder
         self.decoder = Decoder(
             num_ch_enc=self.encoder.num_ch_enc, scales=scales,
             num_output_channels=nclass, use_sigmoid=False)
 
     def forward(self, input):
-        features = self.encoder(input)
+        features = self.backbone(input)
         output = self.decoder(features)[('disp', 0)]
         output = F.interpolate(output, size=input.size()[2:], mode='bilinear', align_corners=True)
 
