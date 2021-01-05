@@ -35,6 +35,7 @@ import networks
 
 import wandb
 
+# used to use this to visualize b&w images nicely, like for entropy
 def colorize(value, vmin=None, vmax=None, cmap=None):
     vmin = value.min() if vmin is None else vmin
     vmax = value.max() if vmax is None else vmax
@@ -50,6 +51,7 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
     value = cmapper(value,bytes=True) # (nxmx4)
     return value
 
+# default args object
 def get_args():
     return {'backbone': 'mobilenet',
             'base_size': 513,
@@ -86,12 +88,14 @@ def get_args():
             'weight_decay': 0.0005,
             'workers': 6}
 
+# pascal voc segmentation classes
 segmentation_classes = [
     'background','aeroplane','bicycle','bird','boat','bottle',
     'bus','car','cat','chair','cow','diningtable','dog','horse',
     'motorbike','person','pottedplant','sheep','sofa','train','tvmonitor'
 ]
 
+# used for wandb segmentation mask visualizations
 def labels():
   l = {}
   for i, label in enumerate(segmentation_classes):
@@ -103,6 +107,9 @@ def wb_mask(bg_img, pred_mask, true_mask):
     "prediction" : {"mask_data" : pred_mask, "class_labels" : labels()},
     "ground truth" : {"mask_data" : true_mask, "class_labels" : labels()}})
 
+# straight forward segmentation model optionally using rloss,
+# ported over from meng's repo to pytorch lightning
+# there are a lot of visualizations using wandb
 class SegModel(pl.LightningModule):
     def __init__(self, hparams, nclass=21, num_img_tr=800, load_model=True):
         super().__init__()
@@ -392,7 +399,7 @@ class SegModel(pl.LightningModule):
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
         print('Loss: %.3f' % test_loss)
 
-# cd rloss && git add . && git commit -m "f" && git push origin master && cd .. && git add . && git commit -m "f" && git push --recurse-submodules=on-demand
+# simple multi branch implementation of multiscale rloss with deeplab
 class Mutiscale_Seg_Model(SegModel):
     def __init__(self, hparams, nclass=21, num_img_tr=800, scales=[1.0, 0.5, 0.25], sigma_xy=[25, 25, 25]):
         super().__init__(hparams, nclass, num_img_tr, load_model=False)
@@ -573,6 +580,8 @@ def get_log_softmax(output):
     return logS, log1_S
 
 
+# try using a simple deeplab segmenation model with rloss with varying bandwidth
+# the generators don't have to be yield or anything just return a float
 
 class Variable_Bandwidth_Model(SegModel):
     def __init__(self, hparams=None, xy_generator=lambda a,b:100, rgb_generator=lambda a,b:15, nclass=21, num_img_tr=800):
@@ -718,6 +727,7 @@ class Variable_Bandwidth_Model(SegModel):
     def test_step(self, batch, batch_idx):
         pass
 
+# try using unet for segmentation with multiscale rloss
 class UNet(nn.Module):
     def __init__(self, nclass=21, load_model=True, scales=range(5), debug=False):
         super(UNet, self).__init__()
@@ -905,7 +915,8 @@ class UNet_Model(SegModel):
     def validation_step(self, batch, batch_idx):
         pass
 
-
+# sometimes i want to play with the components of deeplab
+# this is just the deeplab encoder with the last conv block from the decoder
 class SimpleEncoder(DeepLab):
     def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
                  sync_bn=True, freeze_bn=False):
@@ -938,7 +949,9 @@ class SimpleEncoder(DeepLab):
                         if p.requires_grad:
                             yield p
 
-
+# this is a variant of the simple deeplab model that can have it's decoder pretrained to perform random projections
+# to pretrain set decoder_loss to True
+# to train normally set the decoder_loss to False
 class SimpleDecoder(SegModel):
     def __init__(self, hparams, nclass=21, num_img_tr=800, load_model=True):
         super().__init__(hparams, nclass, num_img_tr, load_model=True)
@@ -989,6 +1002,8 @@ class SimpleDecoder(SegModel):
           return self.get_simple_decoder_loss(batch, batch_idx)
         return self.get_loss(batch, batch_idx)
 
+# this model takes the output of the encoder, performs a random matrix projection,
+# then runs the deeplab decoder block
 class RandProjEncoder(DeepLab):
     def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
                  sync_bn=True, freeze_bn=False):
